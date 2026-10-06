@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en" data-demo="1">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>LitSense | Review-aware book recommendations</title>
+  <meta name="description" content="LitSense is a review-aware, explainable and conversational book recommendation system. Frontend prototype with three visual directions.">
+  <meta name="theme-color" content="#231c17">
+  <link rel="icon" href="assets/icons/favicon.svg" type="image/svg+xml">
+
+  <!-- Apply the demo before first paint so the page never flashes the wrong theme.
+       Order: ?demo=1|2|3 in the URL, then the saved choice, then Demo 1. -->
+  <script>
+    (function () {
+      var demo = '1';
+      try { var s = JSON.parse(window.localStorage.getItem('litsense.prototype.v1') || '{}'); if (s && [1, 2, 3].indexOf(s.demo) > -1) { demo = String(s.demo); } } catch (e) { /* storage unavailable */ }
+      var m = /[?&]demo=([123])\b/.exec(window.location.search);
+      if (m) { demo = m[1]; }
+      document.documentElement.setAttribute('data-demo', demo);
+    })();
+  </script>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Caveat:wght@500;600&family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700&family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;0,9..144,800;0,9..144,900;1,9..144,400;1,9..144,600&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Inter:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&family=Playfair+Display:ital,wght@0,500;0,600;0,700;0,800;1,500;1,600;1,700&display=swap">
+
+  <link rel="stylesheet" href="css/styles.css">
+  <link rel="stylesheet" href="css/demo1.css">
+  <link rel="stylesheet" href="css/demo2.css">
+  <link rel="stylesheet" href="css/demo3.css">
+</head>
+<body data-page="discover">
+  <a class="skip" href="#view">Skip to content</a>
+  <noscript><p style="margin:0;padding:16px;background:#fff3cd;color:#3b2f00;font:500 15px/1.5 system-ui,sans-serif">LitSense is an interactive prototype and needs JavaScript. Please enable it and reload.</p></noscript>
+
+  <!-- Prototype switcher: not part of the product, only for presenting the three directions. -->
+  <div class="proto" id="proto" role="region" aria-label="Prototype controls">
+    <span class="proto__label"><span class="proto__dot" aria-hidden="true"></span><span>LitSense prototype</span><i>mock data, no backend</i></span>
+    <div class="proto__switch" role="radiogroup" aria-label="Choose a visual demo">
+      <span class="proto__demo">Prototype demo</span>
+      <button type="button" role="radio" aria-checked="true" class="proto__btn is-active" data-action="switch-demo" data-demo="1"><span class="proto__num">1</span><span class="proto__long">Dark Literary</span><span class="proto__short">Dark</span></button>
+      <button type="button" role="radio" aria-checked="false" class="proto__btn" data-action="switch-demo" data-demo="2"><span class="proto__num">2</span><span class="proto__long">Warm Editorial</span><span class="proto__short">Editorial</span></button>
+      <button type="button" role="radio" aria-checked="false" class="proto__btn" data-action="switch-demo" data-demo="3"><span class="proto__num">3</span><span class="proto__long">Reader OS</span><span class="proto__short">OS</span></button>
+    </div>
+    <button type="button" class="proto__reset" data-action="reset-demo" title="Reset the demo data"><span data-icon="refresh" data-size="15"></span><span class="proto__long">Reset</span></button>
+  </div>
+
+  <!-- Newspaper masthead: only visible in Demo 2. -->
+  <div class="masthead" id="masthead">
+    <div class="masthead__row"><span id="mastDate"></span><span>Vol. 07 &middot; The Reader&rsquo;s Edition</span><span>Review-aware &middot; Explainable &middot; Conversational</span></div>
+    <a class="masthead__title" href="#/discover">LitSense</a>
+    <p class="masthead__tag">From knowing what a reader liked, to understanding why they liked it.</p>
+  </div>
+
+  <header class="site-header" id="siteHeader">
+    <nav class="nav" aria-label="Primary">
+      <a class="brand" href="#/discover" aria-label="LitSense home">
+        <svg class="brand__mark" viewBox="0 0 32 32" aria-hidden="true" focusable="false"><path d="M8 3h16v26l-8-6-8 6z" fill="currentColor"/><path d="M16 7Q16 12 21 12Q16 12 16 17Q16 12 11 12Q16 12 16 7Z" fill="var(--mark-spark, #fff)"/></svg>
+        <span class="brand__name">LitSense</span>
+      </a>
+      <ul class="nav__links" id="navLinks"></ul>
+      <div class="nav__actions">
+        <button class="nav__search" type="button" data-action="open-search" aria-label="Search books">
+          <span data-icon="search" data-size="18"></span><span class="nav__search-text">Search books, authors, genres</span><kbd>/</kbd>
+        </button>
+        <a class="nav__profile" href="#/profile" data-nav="profile" aria-label="Your Reader DNA profile"><span class="avatar">M</span></a>
+      </div>
+    </nav>
+  </header>
+
+  <main id="view" class="view" tabindex="-1"></main>
+
+  <footer class="site-footer">
+    <div class="container site-footer__inner">
+      <div class="site-footer__brand">
+        <strong class="site-footer__name">LitSense</strong>
+        <p>From knowing what a reader liked, to understanding why they liked it.</p>
+      </div>
+      <ul class="site-footer__links">
+        <li><a href="#/discover">Discover</a></li>
+        <li><a href="#/my-books">My Books</a></li>
+        <li><a href="#/recommendations">Recommendations</a></li>
+        <li><a href="#/recent">Recent Reads</a></li>
+        <li><a href="#/chat">Ask LitSense</a></li>
+        <li><a href="#/profile">Reader DNA</a></li>
+      </ul>
+      <p class="site-footer__note">Frontend prototype with mock data and no backend. Cover images courtesy of Open Library.</p>
+    </div>
+  </footer>
+
+  <nav class="tabbar" id="bottomNav" aria-label="Mobile navigation"></nav>
+
+  <div class="search" id="search" hidden>
+    <div class="search__backdrop" data-action="close-search"></div>
+    <div class="search__panel" role="dialog" aria-modal="true" aria-label="Search books">
+      <div class="search__field">
+        <span data-icon="search" data-size="20"></span>
+        <input id="searchInput" type="search" placeholder="Search by title, author or genre" autocomplete="off" spellcheck="false" aria-controls="searchResults">
+        <button type="button" class="search__close" data-action="close-search" aria-label="Close search">Esc</button>
+      </div>
+      <div class="search__hint" id="searchHint"></div>
+      <ul class="search__results" id="searchResults" role="listbox" aria-label="Search results"></ul>
+    </div>
+  </div>
+
+  <div class="modal" id="modal" hidden></div>
+  <div class="toasts" id="toasts" aria-live="polite"></div>
+
+  <!-- Classic scripts (no ES modules) so this file opens straight from disk. Order matters. -->
+  <script src="js/data.js"></script>
+  <script src="js/util.js"></script>
+  <script src="js/engine.js"></script>
+  <script src="js/components.js"></script>
+  <script src="js/views.js"></script>
+  <script src="js/overlays.js"></script>
+  <script src="js/navigation.js"></script>
+  <script src="js/chat.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

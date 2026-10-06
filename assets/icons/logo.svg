@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 48" role="img" aria-label="LitSense">
+  <g transform="translate(2 4)">
+    <path d="M8 3h16v26l-8-6-8 6z" fill="#c49a52"/>
+    <path d="M16 7Q16 12 21 12Q16 12 16 17Q16 12 11 12Q16 12 16 7Z" fill="#231c17"/>
+  </g>
+  <text x="46" y="35" font-family="'Playfair Display', Georgia, serif" font-style="italic" font-weight="700" font-size="32" fill="#231c17">LitSense</text>
+</svg>
