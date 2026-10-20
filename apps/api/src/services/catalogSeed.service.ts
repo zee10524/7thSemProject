@@ -21,6 +21,11 @@ type BookFields = Omit<Book, 'createdAt' | 'updatedAt'>;
 /** The service's maximum page size for `/v1/catalog`. */
 const CATALOG_PAGE = 1000;
 
+interface LiveVersions {
+  bundleVersion: string | null;
+  dataVersion: string | null;
+}
+
 function fromCatalogRow(row: CatalogBook, source: SeedSource): BookFields {
   return {
     bookId: row.book_id,
@@ -86,8 +91,26 @@ export class CatalogSeedService {
         `The catalogue was seeded from "${meta.source}". Switching to "${source}" changes book ids; rerun with reset to clear reader data.`,
       );
     }
+    let live: LiveVersions = { bundleVersion: null, dataVersion: null };
+    if (source === 'model') {
+      live = await this.liveVersions();
+      // Book ids are stable within a data version and renumbered across them (a new bundle of the
+      // same data version reseeds in place, keeping reader data).
+      const seeded = meta?.source === 'model' && existing > 0 ? (meta.dataVersion ?? null) : null;
+      if (seeded && live.dataVersion && seeded !== live.dataVersion && !opts.reset) {
+        this.logger.warn(
+          { seeded, live: live.dataVersion },
+          'reseed refused: the model service serves a new data version, which renumbers book ids',
+        );
+        throw errors.conflict(
+          `The model service now serves data version "${live.dataVersion}" but the catalogue holds "${seeded}". A new data version renumbers book ids; rerun with reset to clear reader data.`,
+        );
+      }
+    }
     const fetched =
-      source === 'fixture' ? { rows: fixtureRows(), bundleVersion: null } : await this.fetchModelCatalog();
+      source === 'fixture'
+        ? { rows: fixtureRows(), bundleVersion: null }
+        : await this.fetchModelCatalog(live.bundleVersion);
     const { rows } = fetched;
     if (!rows.length) throw errors.badRequest('The catalogue is empty; nothing to seed.');
 
@@ -97,16 +120,18 @@ export class CatalogSeedService {
     }));
     for (let i = 0; i < ops.length; i += 1000) await bookRepository.bulkUpsert(ops.slice(i, i + 1000));
     await bookRepository.deleteNotIn(rows.map((r) => r.bookId));
-    const modelVersion = fetched.bundleVersion ?? (await this.currentBundleVersion());
-    await bookRepository.setMeta({ source, modelVersion, count: rows.length });
+    const modelVersion = fetched.bundleVersion ?? (await this.liveVersions().catch(() => live)).bundleVersion;
+    const dataVersion = source === 'model' ? live.dataVersion : null;
+    await bookRepository.setMeta({ source, modelVersion, dataVersion, count: rows.length });
     this.catalog.invalidate();
-    this.logger.info({ source, count: rows.length, modelVersion }, 'catalogue seeded');
+    this.logger.info({ source, count: rows.length, modelVersion, dataVersion }, 'catalogue seeded');
     return { upserted: rows.length, source };
   }
 
   /**
    * On boot: seed an empty catalogue; otherwise warn when the model service now serves a different
-   * bundle than the one the catalogue came from (its book ids may differ, so reseeding is a human call).
+   * bundle than the one the catalogue came from. Reseeding stays a human call: in place for a new
+   * bundle of the same data version, with reset for a new data version (book ids renumbered).
    */
   async seedIfEmpty(): Promise<void> {
     if ((await bookRepository.count()) === 0) {
@@ -115,11 +140,18 @@ export class CatalogSeedService {
     }
     const meta = await bookRepository.getMeta();
     if (meta?.source !== 'model') return;
-    const live = await this.currentBundleVersion();
-    if (live && meta.modelVersion && live !== meta.modelVersion) {
+    const live = await this.liveVersions().catch(() => null);
+    if (!live) return;
+    const seeded = { bundleVersion: meta.modelVersion ?? null, dataVersion: meta.dataVersion ?? null };
+    if (live.dataVersion && seeded.dataVersion && live.dataVersion !== seeded.dataVersion) {
+      this.logger.error(
+        { seeded, live },
+        'the model service serves a new data version (book ids renumbered); reseed with reset: npm run seed -- --source=model --reset',
+      );
+    } else if (live.bundleVersion && seeded.bundleVersion && live.bundleVersion !== seeded.bundleVersion) {
       this.logger.warn(
-        { seeded: meta.modelVersion, live },
-        'the model service serves a different bundle than the seeded catalogue; reseed (npm run seed -- --source=model)',
+        { seeded, live },
+        'the model service serves a new bundle of the same data version; reseed in place: npm run seed -- --source=model',
       );
     }
   }
@@ -149,19 +181,30 @@ export class CatalogSeedService {
     }
   }
 
-  private async currentBundleVersion(): Promise<string | null> {
-    try {
-      const health = await this.model.health({ requestId: `seed-${randomUUID()}` });
-      return typeof health.bundle_version === 'string' ? health.bundle_version : null;
-    } catch {
-      return null;
+  /**
+   * The bundle and data version the model service serves now, from its `/health`. A service still
+   * loading its bundle counts as unavailable, so the boot seed waits for it.
+   */
+  private async liveVersions(): Promise<LiveVersions> {
+    const health = await this.model.health({ requestId: `seed-${randomUUID()}` });
+    if (health.ready === false) {
+      throw new ModelServiceError('unavailable', 'the model service is loading its bundle', 'health');
     }
+    return {
+      bundleVersion: typeof health.bundle_version === 'string' ? health.bundle_version : null,
+      dataVersion: typeof health.data_version === 'string' ? health.data_version : null,
+    };
   }
 
-  /** Pages `/v1/catalog` by offset until `total`; a bundle swap mid-way would mix two id spaces, so it aborts. */
-  private async fetchModelCatalog(): Promise<{ rows: BookFields[]; bundleVersion: string | null }> {
+  /**
+   * Pages `/v1/catalog` by offset until `total`. Every page must carry the bundle version the
+   * service reported before paging: a bundle swap mid-way would mix two id spaces, so it aborts.
+   */
+  private async fetchModelCatalog(
+    expected: string | null,
+  ): Promise<{ rows: BookFields[]; bundleVersion: string | null }> {
     const rows: BookFields[] = [];
-    let bundleVersion: string | null = null;
+    let bundleVersion: string | null = expected;
     let offset = 0;
     const ctx = { requestId: `seed-${randomUUID()}` };
     for (let page = 0; page < 10_000; page += 1) {

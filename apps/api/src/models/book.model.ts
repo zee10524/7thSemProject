@@ -48,6 +48,8 @@ const catalogMetaSchema = new Schema(
     key: { type: String, required: true },
     source: { type: String, enum: ['model', 'fixture'], required: true },
     modelVersion: { type: String, default: null },
+    /** The service's data version: book ids are stable within one, renumbered across them. */
+    dataVersion: { type: String, default: null },
     count: { type: Number, required: true },
     seededAt: { type: Date, required: true },
   },

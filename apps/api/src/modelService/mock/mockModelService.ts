@@ -726,6 +726,7 @@ export class MockModelService implements ModelService {
       mock: true,
       api_version: '0.1.0',
       bundle_version: MOCK_MODEL_VERSION,
+      data_version: 'mock',
       ranker: false,
       llm: false,
       n_books: N_BOOKS,

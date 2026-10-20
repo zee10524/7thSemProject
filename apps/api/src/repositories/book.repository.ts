@@ -52,7 +52,12 @@ export const bookRepository = {
     return CatalogMetaModel.findOne({ key: 'catalog' }).lean();
   },
 
-  setMeta(meta: { source: 'model' | 'fixture'; modelVersion: string | null; count: number }) {
+  setMeta(meta: {
+    source: 'model' | 'fixture';
+    modelVersion: string | null;
+    dataVersion: string | null;
+    count: number;
+  }) {
     return CatalogMetaModel.updateOne(
       { key: 'catalog' },
       { $set: { ...meta, seededAt: new Date() } },

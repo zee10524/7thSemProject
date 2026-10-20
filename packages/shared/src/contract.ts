@@ -319,6 +319,8 @@ export const ModelHealth = z.looseObject({
   mock: z.boolean().optional(),
   api_version: z.string().optional(),
   bundle_version: z.string().nullable().optional(),
+  /** Book ids are stable within one data version and renumbered across data versions. */
+  data_version: z.string().nullable().optional(),
   ranker: z.boolean().optional(),
   llm: z.boolean().optional(),
 });

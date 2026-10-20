@@ -132,7 +132,10 @@ links to `/admin` (service health, breaker state, evaluation metrics, catalogue 
    boot seed retries (2 s doubling to 30 s) until the service has loaded its bundle, and `/readyz` is
    503 `not_ready` until the catalogue exists (`degraded` while the service is down or still loading).
 3. Book ids are the core's `book_id`s, so switching catalogues needs a reseed. The seed refuses to
-   silently remap ids; with `--reset` it clears reader data (ratings, shelves, reviews, chats):
+   silently remap ids; with `--reset` it clears reader data (ratings, shelves, reviews, chats).
+   Within one service `data_version` ids never change, so a new bundle of the same data version
+   reseeds in place and keeps reader data; a new data version renumbers ids, so the seed refuses it
+   without `--reset` (it stores both versions with the catalogue):
 
 ```bash
 npm run seed -- --source=model --reset
@@ -151,7 +154,11 @@ LLM-backed calls (explain, chat, onboarding, review analysis) are retried only w
 run: connection refused, 429 or 503. The seed pages `/v1/catalog` by offset until `total` and aborts if
 `bundle_version` changes mid-read. Caches keyed by book id (insights, onboarding grid, feed, rails,
 related books, search) include the catalogue's bundle version, so they roll over on a reseed. On boot the
-API warns when the service's `bundle_version` differs from the one the catalogue was seeded from.
+API logs which reseed is needed when the service's `bundle_version` (in place) or `data_version` (with
+`--reset`) differs from the ones the catalogue was seeded from.
+
+The LLM routes (explanations, chat replies, onboarding parsing) were tested in template mode only;
+setting `GEMINI_API_KEY` on the model service turns them on with no change in the Node app.
 
 To run the end-to-end smoke test against a running model service instead of the mock (it uses its own
 database, `litsense_e2e_live`, seeded from the service on first start; drop it when the service's
@@ -274,7 +281,7 @@ and re-runs the turn with an empty message.
 | Shared contract (chip keys, schema rules)                                               | Vitest                                     | 7     |
 | API unit (breaker, retry, HTTP client, mock contract behaviour)                         | Vitest                                     | 33    |
 | API drift check (requests and mock responses against the model service's OpenAPI)       | Vitest + Ajv                               | 4     |
-| API integration (auth, library, onboarding, chat, reviews, jobs, resilience, seeding)   | Vitest + supertest + mongodb-memory-server | 46    |
+| API integration (auth, library, onboarding, chat, reviews, jobs, resilience, seeding)   | Vitest + supertest + mongodb-memory-server | 48    |
 | Web unit (HTTP client, evidence parsing, components)                                    | Vitest + Testing Library                   | 13    |
 | End to end (sign up, onboarding, recommendations, explain, dismiss, chat, chip removal) | Playwright                                 | 1     |
 
