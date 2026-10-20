@@ -1,0 +1,90 @@
+# Local stack: docker compose up --build   ->   web http://localhost:8080, API http://localhost:4000/docs
+# The Python model service is optional: by default the API uses its in-process mock (MODEL_SERVICE_MODE=mock).
+# To run against the real model service:  docker compose --profile model up --build
+# and set MODEL_SERVICE_MODE=http, MODEL_SERVICE_URL=http://model:8000, MODEL_SERVICE_KEY in .env.
+
+name: litsense
+
+services:
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    ports:
+      - '27017:27017'
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: ['CMD', 'mongosh', '--quiet', '--eval', "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ['redis-server', '--appendonly', 'yes']
+    ports:
+      - '6379:6379'
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      PORT: 4000
+      MONGODB_URI: mongodb://mongo:27017/litsense
+      REDIS_URL: redis://redis:6379
+      TRUST_PROXY: 1
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8080,http://localhost:5173}
+      MODEL_SERVICE_MODE: ${MODEL_SERVICE_MODE:-mock}
+      MODEL_SERVICE_URL: ${MODEL_SERVICE_URL:-http://model:8000}
+    ports:
+      - '4000:4000'
+    depends_on:
+      mongo:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    restart: unless-stopped
+    environment:
+      API_UPSTREAM: http://api:4000
+    ports:
+      - '8080:8080'
+    depends_on:
+      - api
+
+  # Placeholder for the Python model service (litsense_core over HTTP, branch serve-api of
+  # zee10524/LightGcn). Point MODEL_SERVICE_IMAGE at its image, or MODEL_SERVICE_CONTEXT at a checkout.
+  model:
+    profiles: ['model']
+    image: ${MODEL_SERVICE_IMAGE:-litsense-model:local}
+    build:
+      context: ${MODEL_SERVICE_CONTEXT:-../LitSense-service}
+      dockerfile: ${MODEL_SERVICE_DOCKERFILE:-service/Dockerfile}
+    restart: unless-stopped
+    env_file:
+      - path: .env.model
+        required: false
+    ports:
+      - '8000:8000'
+
+volumes:
+  mongo-data:
+  redis-data:

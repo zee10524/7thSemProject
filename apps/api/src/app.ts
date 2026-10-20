@@ -43,6 +43,7 @@ export function createApp(c: Container): Express {
           method: req.method,
           url: req.url,
         }),
+        res: (res: { statusCode: number }) => ({ statusCode: res.statusCode }),
       },
     }),
   );
@@ -106,6 +107,7 @@ export function createApp(c: Container): Express {
           scriptSrc: ["'self'", "'unsafe-inline'"],
           styleSrc: ["'self'", "'unsafe-inline'"],
           imgSrc: ["'self'", 'data:'],
+          upgradeInsecureRequests: null,
         },
       },
     }),
