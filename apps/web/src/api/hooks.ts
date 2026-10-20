@@ -85,6 +85,11 @@ export function useMe() {
   });
 }
 
+/** The reader's AI-off switch (contract overrides.disabled_ai): when on, LLM-written text is not shown. */
+export function useAiOff(): boolean {
+  return useMe().data?.overrides.disabledAi ?? false;
+}
+
 export function useMeta() {
   return useQuery({ queryKey: keys.meta, queryFn: api.meta, staleTime: Infinity, retry: false });
 }

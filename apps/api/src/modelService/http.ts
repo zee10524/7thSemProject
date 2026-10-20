@@ -16,6 +16,7 @@ import {
 } from '@litsense/shared';
 import type { Logger } from '../lib/logger.js';
 import { type CircuitBreaker } from './circuitBreaker.js';
+import type { paths } from './generated/model-service.js';
 import { backoffDelay, sleep } from './retry.js';
 import { type CallContext, type ModelService, ModelServiceError } from './types.js';
 
@@ -31,7 +32,14 @@ export interface HttpModelServiceOptions {
   random?: () => number;
 }
 
-type RouteSpec = { method: 'GET' | 'POST'; path: string; slow: boolean; retry: 'safe' | 'once' };
+type RouteSpec = { method: 'GET' | 'POST'; path: keyof paths; slow: boolean; retry: 'safe' | 'once' };
+
+/** JSON body of a POST route, from the types generated off the service's OpenAPI (`npm run gen:model-types`). */
+type BodyOf<P extends keyof paths> = paths[P] extends {
+  post: { requestBody: { content: { 'application/json': infer B } } };
+}
+  ? B
+  : never;
 
 /**
  * The model service's routes (zee10524/LightGcn, branch serve-api, `service/openapi.json`): one route
@@ -134,34 +142,38 @@ export class HttpModelService implements ModelService {
         filters: a.filters ?? null,
         exclude: a.exclude ?? [],
         use_ranker: true,
-      },
+      } satisfies BodyOf<'/v1/recommend'>,
     });
   }
 
   homeRails(ctx: CallContext, a: Parameters<ModelService['homeRails']>[1]) {
-    return this.call('home_rails', HomeRails, ctx, { body: { state: a.state } });
+    return this.call('home_rails', HomeRails, ctx, {
+      body: { state: a.state } satisfies BodyOf<'/v1/home-rails'>,
+    });
   }
 
   similarBooks(ctx: CallContext, a: Parameters<ModelService['similarBooks']>[1]) {
     return this.call('similar_books', listOf(RecItem), ctx, {
-      body: { book_id: a.bookId, k: a.k, state: a.state ?? null },
+      body: { book_id: a.bookId, k: a.k, state: a.state ?? null } satisfies BodyOf<'/v1/similar-books'>,
     });
   }
 
   moreByAuthor(ctx: CallContext, a: Parameters<ModelService['moreByAuthor']>[1]) {
     return this.call('more_by_author', listOf(RecItem), ctx, {
-      body: { book_id: a.bookId, k: a.k, state: a.state ?? null },
+      body: { book_id: a.bookId, k: a.k, state: a.state ?? null } satisfies BodyOf<'/v1/more-by-author'>,
     });
   }
 
   semanticSearch(ctx: CallContext, a: Parameters<ModelService['semanticSearch']>[1]) {
     return this.call('semantic_search', listOf(SearchHit), ctx, {
-      body: { query: a.query, k: a.k, filters: a.filters ?? null },
+      body: { query: a.query, k: a.k, filters: a.filters ?? null } satisfies BodyOf<'/v1/semantic-search'>,
     });
   }
 
   resolveEntities(ctx: CallContext, a: { query: string }) {
-    return this.call('resolve_entities', EntityMatch, ctx, { body: { query: a.query } });
+    return this.call('resolve_entities', EntityMatch, ctx, {
+      body: { query: a.query } satisfies BodyOf<'/v1/resolve-entities'>,
+    });
   }
 
   onboardingGrid(ctx: CallContext, a: { n: number }) {
@@ -171,16 +183,20 @@ export class HttpModelService implements ModelService {
   }
 
   parseOnboarding(ctx: CallContext, a: { text: string; picks: number[] }) {
-    return this.call('parse_onboarding', OnboardingResult, ctx, { body: { text: a.text, picks: a.picks } });
+    return this.call('parse_onboarding', OnboardingResult, ctx, {
+      body: { text: a.text, picks: a.picks } satisfies BodyOf<'/v1/parse-onboarding'>,
+    });
   }
 
   explain(ctx: CallContext, a: Parameters<ModelService['explain']>[1]) {
-    return this.call('explain', Explanation, ctx, { body: { state: a.state, book_id: a.bookId } });
+    return this.call('explain', Explanation, ctx, {
+      body: { state: a.state, book_id: a.bookId } satisfies BodyOf<'/v1/explain'>,
+    });
   }
 
   chatTurn(ctx: CallContext, a: Parameters<ModelService['chatTurn']>[1]) {
     return this.call('chat_turn', ChatReply, ctx, {
-      body: { state: a.state, session: a.session, message: a.message },
+      body: { state: a.state, session: a.session, message: a.message } satisfies BodyOf<'/v1/chat-turn'>,
     });
   }
 
@@ -189,7 +205,9 @@ export class HttpModelService implements ModelService {
   }
 
   analyzeUserReview(ctx: CallContext, a: { text: string }) {
-    return this.call('analyze_user_review', ReviewAnalysis, ctx, { body: { text: a.text } });
+    return this.call('analyze_user_review', ReviewAnalysis, ctx, {
+      body: { text: a.text } satisfies BodyOf<'/v1/analyze-user-review'>,
+    });
   }
 
   metricsReport(ctx: CallContext) {

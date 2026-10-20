@@ -1,7 +1,7 @@
 import { useId, useState } from 'react';
 import { Link } from 'react-router';
 import type { BookDto, Evidence } from '@litsense/shared';
-import { useExplanation } from '../api/hooks';
+import { useAiOff, useExplanation } from '../api/hooks';
 import { errorMessage } from '../api/http';
 import { aspectLabel, parseEvidence, sourceLabel, topAspects } from '../lib/evidence';
 import { AspectRow, Spinner, Tag } from './atoms';
@@ -101,6 +101,9 @@ export function EvidenceDrawer({
 }) {
   const titleId = useId();
   const exp = useExplanation(book.bookId, true);
+  const aiOff = useAiOff();
+  // With AI text off, an LLM explanation (e.g. cached from before the switch) gives way to the template reason.
+  const hideLlm = aiOff && exp.data?.method === 'llm';
   const ev = parseEvidence(exp.data?.evidence ?? evidence);
   const aspects = topAspects(ev, 6);
   return (
@@ -118,7 +121,7 @@ export function EvidenceDrawer({
             <span>In plain words</span>
             {exp.data && (
               <span className="method-badge">
-                {exp.data.method === 'llm' ? 'written by AI, checked' : 'template'}
+                {exp.data.method === 'llm' && !hideLlm ? 'written by AI, checked' : 'template'}
               </span>
             )}
           </p>
@@ -127,8 +130,9 @@ export function EvidenceDrawer({
           ) : exp.isError ? (
             <p className="analysis__empty">{errorMessage(exp.error)}</p>
           ) : (
-            <p className="explain__text">{exp.data?.text}</p>
+            <p className="explain__text">{hideLlm ? reason : exp.data?.text}</p>
           )}
+          {aiOff && <p className="analysis__empty">AI-written text is off in your account settings.</p>}
         </section>
 
         <div className="drawer__cols">

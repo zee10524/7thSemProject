@@ -9,7 +9,7 @@ import {
   useRemoveChip,
   useSendChat,
 } from '../api/chatHooks';
-import { useMe } from '../api/hooks';
+import { useAiOff, useMe } from '../api/hooks';
 import { errorMessage } from '../api/http';
 import { Cover, ErrorState, RankBadge, Stars } from '../components/atoms';
 import { bookHref, CHAT_STARTERS } from '../lib/links';
@@ -117,7 +117,13 @@ function AssistantMessage({
   onAsk: (m: string) => void;
   busy: boolean;
 }) {
-  const words = turn.intro.split(/\s+/).length;
+  const aiOff = useAiOff();
+  // With AI text off, an LLM-written explanation (from before the switch) shows the template reason.
+  const intro =
+    aiOff && turn.method === 'llm' && turn.intent === 'explain_recommendation' && turn.items[0]
+      ? turn.items[0].reason
+      : turn.intro;
+  const words = intro.split(/\s+/).length;
   return (
     <div
       className={`msg msg--ai${fresh ? ' msg--new' : ''}`}
@@ -130,9 +136,11 @@ function AssistantMessage({
         <div className="msg__bubble">
           <span className="msg__who">LitSense</span>
           <p className="msg__text">
-            <Words text={turn.intro} animate={fresh} />
+            <Words text={intro} animate={fresh} />
           </p>
-          {turn.method === 'llm' && <span className="method-badge">written by AI from the picks</span>}
+          {turn.method === 'llm' && !aiOff && (
+            <span className="method-badge">written by AI from the picks</span>
+          )}
         </div>
         {turn.items.map((item, i) => (
           <ChatCard

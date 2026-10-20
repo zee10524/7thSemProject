@@ -93,6 +93,26 @@ describe('UserStateBuilder', () => {
     expect(state.viewed.length).toBeLessThanOrEqual(50);
   });
 
+  it('never carries the email, name or database id to the model service', async () => {
+    const userId = await makeUser();
+    const user = await UserModel.findById(userId).lean();
+    await RatingModel.create({ userId, bookId: 3, stars: 5, ratedAt: new Date() });
+    const state = await t.c.states.build(String(userId));
+    const wire = JSON.stringify(state);
+    expect(state.user_id).toBeNull();
+    expect(state.corpus_user_id).toBeNull();
+    expect(wire).not.toContain(String(userId));
+    expect(wire).not.toContain(user!.email);
+    expect(wire).not.toContain('@');
+
+    // X-Client-Id is a keyed hash: stable per reader, different across readers, not the id itself.
+    const id = String(userId);
+    const p = t.c.tokens.pseudonym(id);
+    expect(p).toBe(t.c.tokens.pseudonym(id));
+    expect(p).not.toContain(id);
+    expect(p).not.toBe(t.c.tokens.pseudonym(new Types.ObjectId().toHexString()));
+  });
+
   it('drops ids the catalogue no longer has, so the core never rejects the state', async () => {
     const userId = await makeUser();
     await RatingModel.create({ userId, bookId: 9999, stars: 5, ratedAt: new Date() });

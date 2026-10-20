@@ -15,6 +15,7 @@ export default tseslint.config(
       '**/playwright-report/**',
       '**/test-results/**',
       'apps/api/openapi.json',
+      'apps/api/src/modelService/generated/**',
     ],
   },
   js.configs.recommended,

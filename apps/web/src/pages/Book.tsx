@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { Link, useParams } from 'react-router';
 import {
+  useAiOff,
   useBook,
   useExplanation,
   useInsights,
@@ -32,10 +33,22 @@ import { ASPECT_ROWS, aspectLabel, parseEvidence, sourceLabel } from '../lib/evi
 import { fmtCount } from '../lib/format';
 import { useUi } from '../store/ui';
 
+/** A plain sentence from the evidence, used instead of LLM text when the reader turned AI text off. */
+function templateHeadline(ev: ReturnType<typeof parseEvidence>): string {
+  const top = ev.positives[0];
+  if (top)
+    return `Readers praise its ${top.label} (${Math.round(top.strength * 100)}% of mentions), something you value.`;
+  const liked = ev.similarLiked[0];
+  if (liked) return `Close to ${liked.title}, which you rated ${liked.stars} stars.`;
+  return 'A broad pick, chosen to widen your reading.';
+}
+
 function WhyPanel({ bookId, read }: { bookId: number; read: boolean }) {
   const exp = useExplanation(bookId, !read);
   const review = useReview(read ? bookId : null);
   const shelf = useShelf(bookId);
+  const aiOff = useAiOff();
+  const hideLlm = aiOff && exp.data?.method === 'llm';
 
   if (read) {
     const loved = Object.entries(review.data?.analysis.aspects ?? {}).sort((a, b) => b[1] - a[1]);
@@ -76,7 +89,7 @@ function WhyPanel({ bookId, read }: { bookId: number; read: boolean }) {
         </div>
         {exp.data && (
           <span className="method-badge">
-            {exp.data.method === 'llm' ? 'written by AI, checked' : 'template'}
+            {exp.data.method === 'llm' && !hideLlm ? 'written by AI, checked' : 'template'}
           </span>
         )}
       </div>
@@ -86,7 +99,7 @@ function WhyPanel({ bookId, read }: { bookId: number; read: boolean }) {
         <p className="why-panel__headline">{errorMessage(exp.error)}</p>
       ) : (
         <>
-          <p className="why-panel__headline">{exp.data.text}</p>
+          <p className="why-panel__headline">{hideLlm ? templateHeadline(ev) : exp.data.text}</p>
           <div className="why-panel__cols">
             <div>
               <span className="label">Why it matches</span>
