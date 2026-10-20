@@ -1,0 +1,55 @@
+{
+  "name": "litsense",
+  "private": true,
+  "version": "0.1.0",
+  "description": "LitSense: a review-aware, explainable and conversational book recommender (MERN monorepo).",
+  "type": "module",
+  "engines": {
+    "node": ">=20.11"
+  },
+  "workspaces": [
+    "packages/shared",
+    "apps/api",
+    "apps/web"
+  ],
+  "scripts": {
+    "postinstall": "npm run build -w @litsense/shared",
+    "build:shared": "npm run build -w @litsense/shared",
+    "dev": "npm run build:shared && concurrently -n api,web -c yellow,cyan \"npm run dev -w @litsense/api\" \"npm run dev -w @litsense/web\"",
+    "build": "npm run build -w @litsense/shared && npm run build -w @litsense/api && npm run build -w @litsense/web",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "lint": "eslint . --max-warnings=0",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "npm run test --workspaces --if-present",
+    "test:e2e": "npm run test:e2e -w @litsense/web",
+    "seed": "npm run seed -w @litsense/api",
+    "prepare": "husky"
+  },
+  "lint-staged": {
+    "*.{ts,tsx,js,mjs,cjs}": [
+      "eslint --max-warnings=0 --no-warn-ignored --fix",
+      "prettier --write"
+    ],
+    "*.{json,md,css,yml,yaml}": [
+      "prettier --write"
+    ]
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.5",
+    "@types/node": "^20.19.43",
+    "concurrently": "^9.2.5",
+    "eslint": "^9.39.5",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-react-hooks": "^5.2.0",
+    "eslint-plugin-react-refresh": "^0.4.26",
+    "globals": "^16.5.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.4.0",
+    "prettier": "^3.9.10",
+    "typescript": "~5.9",
+    "typescript-eslint": "^8.72.0",
+    "vitest": "^3.2.7"
+  }
+}

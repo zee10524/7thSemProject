@@ -1,0 +1,268 @@
+import type { RequestHandler } from 'express';
+import { z } from 'zod';
+import {
+  AdminOverview,
+  BookDto,
+  BookIdParam,
+  BookListQuery,
+  ChatMessageBody,
+  ChatSessionDto,
+  ChatSessionSummary,
+  ChatTurnDto,
+  ChipKeyParam,
+  CORE_API_VERSION,
+  ExplanationDto,
+  FeedQuery,
+  FeedResponse,
+  GenresResponse,
+  InsightsDto,
+  PageQuery,
+  RailsResponse,
+  RecItemDto,
+  RelatedQuery,
+  SearchQuery,
+  SearchResponse,
+  SeedResponse,
+  SessionIdParam,
+  pageOf,
+} from '@litsense/shared';
+import type { Container } from '../../container.js';
+import { type AnyRoute, defineRoute } from '../route.js';
+
+const ChatTurnResponse = z.object({ session: ChatSessionDto, reply: ChatTurnDto });
+const ReseedBody = z.object({
+  reset: z.boolean().default(false),
+  source: z.enum(['model', 'fixture']).optional(),
+});
+const MetaResponse = z.object({
+  modelMode: z.enum(['mock', 'http']),
+  coreApiVersion: z.string(),
+  apiVersion: z.string(),
+});
+
+export function discoveryRoutes(c: Container, chatLimiter: RequestHandler): AnyRoute[] {
+  return [
+    defineRoute({
+      method: 'get',
+      path: '/meta',
+      tag: 'Meta',
+      summary: 'Which model service the API talks to',
+      auth: 'public',
+      response: MetaResponse,
+      handler: () => ({ modelMode: c.model.mode, coreApiVersion: CORE_API_VERSION, apiVersion: '0.1.0' }),
+    }),
+
+    // ---------------------------------------------------------------- recommendations
+    defineRoute({
+      method: 'get',
+      path: '/recommendations',
+      tag: 'Recommendations',
+      summary: 'Main feed with reasons and evidence (recommend)',
+      auth: 'user',
+      query: FeedQuery,
+      response: FeedResponse,
+      handler: ({ userId, query, call }) =>
+        c.recommendations.feed(call, userId(), {
+          k: query.k,
+          filters: {
+            min_year: query.minYear ?? null,
+            max_year: query.maxYear ?? null,
+            min_pages: query.minPages ?? null,
+            max_pages: query.maxPages ?? null,
+            genres_include: query.genres ?? [],
+            genres_exclude: query.excludeGenres ?? [],
+          },
+        }),
+    }),
+    defineRoute({
+      method: 'get',
+      path: '/recommendations/rails',
+      tag: 'Recommendations',
+      summary: 'Every Discover rail in one call (home_rails)',
+      auth: 'user',
+      response: RailsResponse,
+      handler: ({ userId, call }) => c.recommendations.rails(call, userId()),
+    }),
+    defineRoute({
+      method: 'get',
+      path: '/recommendations/:bookId/explanation',
+      tag: 'Recommendations',
+      summary: 'Why this book (explain); LLM text when available, else the template',
+      auth: 'user',
+      params: BookIdParam,
+      response: ExplanationDto,
+      handler: ({ userId, params, call }) => c.recommendations.explain(call, userId(), params.bookId),
+    }),
+
+    // ---------------------------------------------------------------- books and search
+    defineRoute({
+      method: 'get',
+      path: '/books',
+      tag: 'Books',
+      summary: 'Browse the catalogue (cursor paginated)',
+      auth: 'public',
+      query: BookListQuery,
+      response: pageOf(BookDto),
+      handler: ({ query }) => c.books.list(query.cursor, query.limit, query.genre),
+    }),
+    defineRoute({
+      method: 'get',
+      path: '/books/genres',
+      tag: 'Books',
+      summary: 'Genres in the catalogue with book counts',
+      auth: 'public',
+      response: GenresResponse,
+      handler: () => c.books.genres(),
+    }),
+    defineRoute({
+      method: 'get',
+      path: '/books/:bookId',
+      tag: 'Books',
+      summary: 'One book',
+      auth: 'public',
+      params: BookIdParam,
+      response: BookDto,
+      handler: ({ params }) => c.books.get(params.bookId),
+    }),
+    defineRoute({
+      method: 'get',
+      path: '/books/:bookId/insights',
+      tag: 'Books',
+      summary: 'Aspect bars, review summary and spoiler-safe snippets (book_insights)',
+      auth: 'public',
+      params: BookIdParam,
+      response: InsightsDto,
+      handler: ({ params, call }) => c.books.insights(call, params.bookId),
+    }),
+    defineRoute({
+      method: 'get',
+      path: '/books/:bookId/similar',
+      tag: 'Books',
+      summary: 'Similar books, personalised when signed in (similar_books)',
+      auth: 'optional',
+      params: BookIdParam,
+      query: RelatedQuery,
+      response: z.array(RecItemDto),
+      handler: ({ params, query, user, call }) => c.books.similar(call, params.bookId, query.k, user?.id),
+    }),
+    defineRoute({
+      method: 'get',
+      path: '/books/:bookId/more-by-author',
+      tag: 'Books',
+      summary: 'More by this author, series order first (more_by_author)',
+      auth: 'optional',
+      params: BookIdParam,
+      query: RelatedQuery,
+      response: z.array(RecItemDto),
+      handler: ({ params, query, user, call }) =>
+        c.books.moreByAuthor(call, params.bookId, query.k, user?.id),
+    }),
+    defineRoute({
+      method: 'get',
+      path: '/search',
+      tag: 'Books',
+      summary: 'Title, author and meaning search (semantic_search + resolve_entities)',
+      auth: 'public',
+      query: SearchQuery,
+      response: SearchResponse,
+      handler: ({ query, call }) => c.books.search(call, query.q, query.k, query.genres),
+    }),
+
+    // ---------------------------------------------------------------- chat
+    defineRoute({
+      method: 'get',
+      path: '/chat/sessions',
+      tag: 'Chat',
+      summary: 'Conversations, newest first (cursor paginated)',
+      auth: 'user',
+      query: PageQuery,
+      response: pageOf(ChatSessionSummary),
+      handler: ({ userId, query }) => c.chat.list(userId(), query.cursor, query.limit),
+    }),
+    defineRoute({
+      method: 'post',
+      path: '/chat/sessions',
+      tag: 'Chat',
+      summary: 'Start a conversation',
+      auth: 'user',
+      status: 201,
+      response: ChatSessionDto,
+      handler: ({ userId }) => c.chat.create(userId()),
+    }),
+    defineRoute({
+      method: 'get',
+      path: '/chat/sessions/:sessionId',
+      tag: 'Chat',
+      summary: 'A conversation with its transcript and active chips',
+      auth: 'user',
+      params: SessionIdParam,
+      response: ChatSessionDto,
+      handler: ({ userId, params }) => c.chat.get(userId(), params.sessionId),
+    }),
+    defineRoute({
+      method: 'delete',
+      path: '/chat/sessions/:sessionId',
+      tag: 'Chat',
+      summary: 'Delete a conversation',
+      auth: 'user',
+      params: SessionIdParam,
+      handler: async ({ userId, params }) => {
+        await c.chat.remove(userId(), params.sessionId);
+      },
+    }),
+    defineRoute({
+      method: 'post',
+      path: '/chat/sessions/:sessionId/messages',
+      tag: 'Chat',
+      summary: 'Send a message (chat_turn); clarification option values are sent the same way',
+      auth: 'user',
+      params: SessionIdParam,
+      body: ChatMessageBody,
+      response: ChatTurnResponse,
+      middleware: [chatLimiter],
+      handler: ({ userId, params, body, call }) =>
+        c.chat.send(call, userId(), params.sessionId, body.message),
+    }),
+    defineRoute({
+      method: 'delete',
+      path: '/chat/sessions/:sessionId/chips/:key',
+      tag: 'Chat',
+      summary: 'Remove an active modifier chip and re-run the session',
+      auth: 'user',
+      params: ChipKeyParam,
+      response: ChatTurnResponse,
+      middleware: [chatLimiter],
+      handler: ({ userId, params, call }) => c.chat.removeChip(call, userId(), params.sessionId, params.key),
+    }),
+
+    // ---------------------------------------------------------------- admin
+    defineRoute({
+      method: 'get',
+      path: '/admin/overview',
+      tag: 'Admin',
+      summary: 'Counts, model service health and circuit breaker state',
+      auth: 'admin',
+      response: AdminOverview,
+      handler: ({ call }) => c.admin.overview(call),
+    }),
+    defineRoute({
+      method: 'get',
+      path: '/admin/metrics',
+      tag: 'Admin',
+      summary: 'Offline evaluation metrics (metrics_report); null means not computed',
+      auth: 'admin',
+      response: z.record(z.string(), z.unknown()),
+      handler: ({ call }) => c.admin.metrics(call),
+    }),
+    defineRoute({
+      method: 'post',
+      path: '/admin/catalog/reseed',
+      tag: 'Admin',
+      summary: 'Re-import the catalogue from the model service (or the fixture)',
+      auth: 'admin',
+      body: ReseedBody,
+      response: SeedResponse,
+      handler: ({ body }) => c.seed.seed({ reset: body.reset, source: body.source }),
+    }),
+  ];
+}

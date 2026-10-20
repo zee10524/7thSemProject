@@ -1,1 +1,14 @@
 .claude/
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store
+playwright-report/
+test-results/
+.vite/
+apps/web/playwright/.cache/

@@ -1,0 +1,26 @@
+{
+  "name": "@litsense/shared",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Contract schemas (litsense_core API 0.1.0) and API DTOs shared by the LitSense api and web.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "zod": "^4.6.7"
+  }
+}
