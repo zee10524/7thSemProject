@@ -5,9 +5,16 @@ import { z } from 'zod';
 
 const DEV_JWT_SECRET = 'dev-only-insecure-secret-change-me-0123456789';
 
-const bool = z
+const boolValue = z
   .enum(['true', 'false', '1', '0', 'yes', 'no'])
   .transform((v) => v === 'true' || v === '1' || v === 'yes');
+
+/** `KEY=` in a .env file arrives as an empty string; an optional boolean treats it as unset. */
+const emptyAsUnset = (v: unknown) => (typeof v === 'string' && v.trim() === '' ? undefined : v);
+const bool = {
+  optional: () => z.preprocess(emptyAsUnset, boolValue.optional()),
+  default: (value: boolean) => z.preprocess(emptyAsUnset, boolValue.default(value)),
+};
 
 const list = z.string().transform((s) =>
   s
