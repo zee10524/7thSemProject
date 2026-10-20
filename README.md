@@ -186,17 +186,18 @@ behind the Vercel rewrite or the nginx proxy.
 
 ## Scripts
 
-| Command                               | What it does                                                         |
-| ------------------------------------- | -------------------------------------------------------------------- |
-| `npm run dev`                         | API (tsx watch) and web (Vite) together.                             |
-| `npm run build`                       | Builds shared, API and web.                                          |
-| `npm run lint` / `npm run format`     | ESLint (flat config, max 0 warnings) and Prettier.                   |
-| `npm run typecheck`                   | `tsc --noEmit` in every workspace.                                   |
-| `npm test`                            | Vitest in every workspace (API tests use mongodb-memory-server).     |
-| `npm run test:e2e`                    | Playwright smoke test; needs MongoDB (`docker compose up -d mongo`). |
-| `npm run seed`                        | Seeds the catalogue (`-- --source=model                              | fixture --reset`). |
-| `npm run openapi -w @litsense/api`    | Regenerates `apps/api/openapi.json` from the route table.            |
-| `npm run dev:worker -w @litsense/api` | Standalone BullMQ worker (when `WORKER_IN_PROCESS=false`).           |
+| Command                                    | What it does                                                          |
+| ------------------------------------------ | --------------------------------------------------------------------- |
+| `npm run dev`                              | API (tsx watch) and web (Vite) together.                              |
+| `npm run build`                            | Builds shared, API and web.                                           |
+| `npm run lint` / `npm run format`          | ESLint (flat config, max 0 warnings) and Prettier.                    |
+| `npm run typecheck`                        | `tsc --noEmit` in every workspace.                                    |
+| `npm test`                                 | Vitest in every workspace (API tests use mongodb-memory-server).      |
+| `npm run test:e2e`                         | Playwright smoke test; needs MongoDB (`docker compose up -d mongo`).  |
+| `npm run seed`                             | Seeds the catalogue (`-- --source=model                               | fixture --reset`). |
+| `npm run openapi -w @litsense/api`         | Regenerates `apps/api/openapi.json` from the route table.             |
+| `npm run dev:worker -w @litsense/api`      | Standalone BullMQ worker (when `WORKER_IN_PROCESS=false`).            |
+| `npm run gen:model-types -w @litsense/api` | Regenerates the model-service client types from the vendored OpenAPI. |
 
 A Husky pre-commit hook runs ESLint and Prettier on staged files (lint-staged).
 
