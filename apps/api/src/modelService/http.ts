@@ -78,20 +78,6 @@ interface CallInput {
   params?: Record<string, string | number>;
 }
 
-/** Accepts a bare list or a list wrapped in a common envelope key. */
-function listOf<T extends z.ZodType>(item: T) {
-  return z.preprocess((value) => {
-    if (Array.isArray(value)) return value;
-    if (value && typeof value === 'object') {
-      for (const key of ['items', 'hits', 'book_ids', 'results', 'data']) {
-        const inner = (value as Record<string, unknown>)[key];
-        if (Array.isArray(inner)) return inner;
-      }
-    }
-    return value;
-  }, z.array(item));
-}
-
 class RetryableError extends Error {
   constructor(
     message: string,
@@ -153,19 +139,19 @@ export class HttpModelService implements ModelService {
   }
 
   similarBooks(ctx: CallContext, a: Parameters<ModelService['similarBooks']>[1]) {
-    return this.call('similar_books', listOf(RecItem), ctx, {
+    return this.call('similar_books', z.array(RecItem), ctx, {
       body: { book_id: a.bookId, k: a.k, state: a.state ?? null } satisfies BodyOf<'/v1/similar-books'>,
     });
   }
 
   moreByAuthor(ctx: CallContext, a: Parameters<ModelService['moreByAuthor']>[1]) {
-    return this.call('more_by_author', listOf(RecItem), ctx, {
+    return this.call('more_by_author', z.array(RecItem), ctx, {
       body: { book_id: a.bookId, k: a.k, state: a.state ?? null } satisfies BodyOf<'/v1/more-by-author'>,
     });
   }
 
   semanticSearch(ctx: CallContext, a: Parameters<ModelService['semanticSearch']>[1]) {
-    return this.call('semantic_search', listOf(SearchHit), ctx, {
+    return this.call('semantic_search', z.array(SearchHit), ctx, {
       body: { query: a.query, k: a.k, filters: a.filters ?? null } satisfies BodyOf<'/v1/semantic-search'>,
     });
   }
@@ -177,7 +163,7 @@ export class HttpModelService implements ModelService {
   }
 
   onboardingGrid(ctx: CallContext, a: { n: number }) {
-    return this.call('onboarding_grid', listOf(z.number().int().min(0)), ctx, {
+    return this.call('onboarding_grid', z.array(z.number().int().min(0)), ctx, {
       query: { n: String(a.n) },
     });
   }
@@ -214,16 +200,10 @@ export class HttpModelService implements ModelService {
     return this.call('metrics_report', MetricsReport, ctx);
   }
 
-  /** The service pages by offset; the cursor here is that offset, and the next one is computed. */
-  async catalogPage(ctx: CallContext, a: { cursor: string | number | null; limit: number }) {
-    const offset = a.cursor === null || a.cursor === undefined ? 0 : Number(a.cursor);
-    const page = await this.call('catalog', CatalogPage, ctx, {
-      query: { offset: String(offset), limit: String(a.limit) },
+  catalogPage(ctx: CallContext, a: { offset: number; limit: number }) {
+    return this.call('catalog', CatalogPage, ctx, {
+      query: { offset: String(a.offset), limit: String(a.limit) },
     });
-    const start = page.offset ?? offset;
-    const end = start + page.items.length;
-    const more = page.total !== undefined ? end < page.total : page.next_cursor !== null;
-    return { ...page, next_cursor: more && page.items.length ? end : null };
   }
 
   private async call<S extends z.ZodType>(

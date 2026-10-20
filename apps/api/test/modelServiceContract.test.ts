@@ -1,12 +1,14 @@
 /**
  * Drift test: every call the HTTP client makes must exist in the model service's published OpenAPI
  * (zee10524/LightGcn, branch serve-api, service/openapi.json, vendored in test/fixtures) and send only
- * the fields its request schema allows, because the service rejects unknown fields with a 400.
- * Refresh the fixture when the service publishes a new version.
+ * the fields its request schema allows, because the service rejects unknown fields with a 400. Every
+ * MockModelService answer must also validate against the published response schema, so switching
+ * from the mock to the real service is config only. Refresh the fixture when the service changes.
  */
 import { readFileSync } from 'node:fs';
+import { Ajv2020 } from 'ajv/dist/2020.js';
 import { describe, expect, it } from 'vitest';
-import { UserState } from '@litsense/shared';
+import { type SessionState, UserState } from '@litsense/shared';
 import { createLogger } from '../src/lib/logger.js';
 import { CircuitBreaker, HttpModelService, MockModelService } from '../src/modelService/index.js';
 import { MODEL_ROUTES } from '../src/modelService/http.js';
@@ -20,6 +22,7 @@ interface Schema {
 interface Operation {
   requestBody?: { content: { 'application/json': { schema: Schema } } };
   parameters?: { name: string; in: string }[];
+  responses: Record<string, { content?: { 'application/json'?: { schema: Schema } } }>;
 }
 interface OpenApi {
   paths: Record<string, Record<string, Operation>>;
@@ -78,12 +81,29 @@ async function answerFromMock(path: string, b: Record<string, never>): Promise<u
   if (path.startsWith('/v1/book-insights/')) return mock.bookInsights(c, { bookId: 2 });
   if (path === '/v1/analyze-user-review') return mock.analyzeUserReview(c, { text: 'Loved it.' });
   if (path === '/v1/metrics-report') return mock.metricsReport(c);
-  if (path === '/v1/catalog') return mock.catalogPage(c, { cursor: null, limit: 5 });
+  if (path === '/v1/catalog') return mock.catalogPage(c, { offset: 0, limit: 5 });
   throw new Error(`unexpected path ${path} ${JSON.stringify(b)}`);
 }
 
 const templateFor = (path: string) =>
   Object.keys(spec.paths).find((p) => new RegExp(`^${p.replace(/\{[^}]+\}/g, '[^/]+')}$`).test(path));
+
+/** Validators for each route's 200 body, with `#/components` refs pointed at the vendored spec. */
+const ajv = new Ajv2020({ strict: false, allErrors: true, validateFormats: false });
+ajv.addSchema({ $id: 'model-service', components: spec.components });
+function responseValidator(path: string, method: 'get' | 'post') {
+  const schema = spec.paths[path]?.[method]?.responses['200']?.content?.['application/json']?.schema;
+  if (!schema) throw new Error(`no 200 JSON response for ${method} ${path}`);
+  const rebased = JSON.parse(
+    JSON.stringify(schema).replaceAll('"#/components/', '"model-service#/components/'),
+  );
+  return ajv.compile(rebased as object);
+}
+function expectPublishedShape(path: string, method: 'get' | 'post', body: unknown) {
+  const validate = responseValidator(path, method);
+  const ok = validate(JSON.parse(JSON.stringify(body)));
+  expect(ok ? [] : validate.errors, `${method.toUpperCase()} ${path}`).toEqual([]);
+}
 
 describe('HTTP client vs the model service OpenAPI', () => {
   it('has every route the client knows about, with the same method', () => {
@@ -113,7 +133,7 @@ describe('HTTP client vs the model service OpenAPI', () => {
     await svc.bookInsights(ctx, { bookId: 2 });
     await svc.analyzeUserReview(ctx, { text: 'Loved it.' });
     await svc.metricsReport(ctx);
-    await svc.catalogPage(ctx, { cursor: null, limit: 1000 });
+    await svc.catalogPage(ctx, { offset: 0, limit: 1000 });
 
     expect(sent).toHaveLength(15);
     for (const call of sent) {
@@ -134,5 +154,65 @@ describe('HTTP client vs the model service OpenAPI', () => {
       for (const key of schema.required ?? [])
         expect(Object.keys(body), `${call.path} requires ${key}`).toContain(key);
     }
+  });
+
+  it('answers from the mock in exactly the published response shapes', async () => {
+    const c = { requestId: 'mock' };
+    const cold = UserState.parse({});
+    expectPublishedShape('/health', 'get', await mock.health(c));
+    for (const s of [cold, state]) {
+      expectPublishedShape('/v1/recommend', 'post', await mock.recommend(c, { state: s, k: 10 }));
+      expectPublishedShape('/v1/home-rails', 'post', await mock.homeRails(c, { state: s }));
+    }
+    expectPublishedShape(
+      '/v1/recommend',
+      'post',
+      await mock.recommend(c, { state, k: 5, filters: { max_pages: 300 }, exclude: [3] }),
+    );
+    for (const bookId of [1, 2, 41]) {
+      expectPublishedShape('/v1/similar-books', 'post', await mock.similarBooks(c, { bookId, k: 5, state }));
+      expectPublishedShape('/v1/more-by-author', 'post', await mock.moreByAuthor(c, { bookId, k: 5 }));
+      expectPublishedShape('/v1/explain', 'post', await mock.explain(c, { state, bookId }));
+      expectPublishedShape('/v1/book-insights/{book_id}', 'get', await mock.bookInsights(c, { bookId }));
+    }
+    for (const query of ['cozy', 'andy weir', 'astronaut friendship', 'zzzz']) {
+      expectPublishedShape('/v1/semantic-search', 'post', await mock.semanticSearch(c, { query, k: 5 }));
+      expectPublishedShape('/v1/resolve-entities', 'post', await mock.resolveEntities(c, { query }));
+    }
+    expectPublishedShape('/v1/onboarding-grid', 'get', await mock.onboardingGrid(c, { n: 30 }));
+    for (const text of ['', 'cozy fantasy, nothing too long', 'I loved Circe and The Martian'])
+      expectPublishedShape(
+        '/v1/parse-onboarding',
+        'post',
+        await mock.parseOnboarding(c, { text, picks: [1, 2] }),
+      );
+
+    let session: SessionState | null = null;
+    for (const message of [
+      'something cozy',
+      'shorter please',
+      'like Circe',
+      'hmm',
+      'more like the first one',
+    ]) {
+      const reply = await mock.chatTurn(c, { state, session, message });
+      expectPublishedShape('/v1/chat-turn', 'post', reply);
+      session = reply.session;
+    }
+    for (const text of ['Loved it, the prose is gorgeous.', 'Too slow and the ending fell flat.', 'ok'])
+      expectPublishedShape('/v1/analyze-user-review', 'post', await mock.analyzeUserReview(c, { text }));
+    expectPublishedShape('/v1/metrics-report', 'get', await mock.metricsReport(c));
+    expectPublishedShape('/v1/catalog', 'get', await mock.catalogPage(c, { offset: 0, limit: 1000 }));
+    expectPublishedShape('/v1/catalog', 'get', await mock.catalogPage(c, { offset: 40, limit: 10 }));
+  });
+
+  it('catches a response that drifts from the published shape', async () => {
+    const validate = responseValidator('/v1/catalog', 'get');
+    const page = await mock.catalogPage({ requestId: 'mock' }, { offset: 0, limit: 2 });
+    const { bundle_version: _v, ...noVersion } = page;
+    expect(validate(noVersion)).toBe(false);
+    const { title: _t, ...untitled } = page.items[0]!;
+    expect(validate({ ...page, items: [untitled] })).toBe(false);
+    expect(validate({ ...page, total: 'many' })).toBe(false);
   });
 });

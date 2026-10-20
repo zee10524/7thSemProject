@@ -1126,22 +1126,16 @@ export class MockModelService implements ModelService {
     };
   }
 
-  async catalogPage(
-    _ctx: CallContext,
-    a: { cursor: string | number | null; limit: number },
-  ): Promise<CatalogPage> {
-    const start = a.cursor === null ? 0 : Number(a.cursor);
-    if (!Number.isInteger(start) || start < 0) reject('bad cursor');
+  async catalogPage(_ctx: CallContext, a: { offset: number; limit: number }): Promise<CatalogPage> {
+    if (!Number.isInteger(a.offset) || a.offset < 0) reject('offset must be a non-negative integer');
+    if (!Number.isInteger(a.limit) || a.limit < 1 || a.limit > 1000) reject('limit must be 1 to 1000');
     const rows = catalogRows();
-    const items = rows.slice(start, start + a.limit);
-    const next = start + a.limit < rows.length ? String(start + a.limit) : null;
     return {
-      items,
-      next_cursor: next,
-      total: rows.length,
-      offset: start,
-      limit: a.limit,
       bundle_version: MOCK_MODEL_VERSION,
+      total: rows.length,
+      offset: a.offset,
+      limit: a.limit,
+      items: rows.slice(a.offset, a.offset + a.limit),
     };
   }
 }

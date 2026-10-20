@@ -211,10 +211,13 @@ describe('other functions', () => {
     expect(meaning.map((h) => h.book_id)).toContain(PHM);
   });
 
-  it('catalog pages through every book', async () => {
-    const first = await m.catalogPage(ctx, { cursor: null, limit: 30 });
-    const second = await m.catalogPage(ctx, { cursor: first.next_cursor, limit: 30 });
+  it('catalog pages by offset through every book, with total and bundle version', async () => {
+    const first = await m.catalogPage(ctx, { offset: 0, limit: 30 });
+    const second = await m.catalogPage(ctx, { offset: 30, limit: 30 });
+    expect(first).toMatchObject({ total: BOOKS.length, offset: 0, limit: 30 });
+    expect(typeof first.bundle_version).toBe('string');
     expect(first.items.length + second.items.length).toBe(BOOKS.length);
-    expect(second.next_cursor).toBeNull();
+    expect(second.offset + second.items.length).toBe(second.total);
+    await expect(m.catalogPage(ctx, { offset: -1, limit: 30 })).rejects.toMatchObject({ kind: 'rejected' });
   });
 });

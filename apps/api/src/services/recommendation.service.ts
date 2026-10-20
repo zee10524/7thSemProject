@@ -20,10 +20,10 @@ export class RecommendationService {
     private readonly ttlS: number,
   ) {}
 
-  /** Main feed. Cached per (user, profile_version, query): any state change misses the cache. */
+  /** Main feed. Cached per (catalogue, user, profile_version, query): any state change misses the cache. */
   async feed(ctx: CallContext, userId: string, opts: FeedOptions): Promise<FeedResponse> {
-    const state = await this.states.build(userId);
-    const key = `rec:${userId}:${state.profile_version}:${shortHash(opts)}`;
+    const [state, version] = await Promise.all([this.states.build(userId), this.catalog.version()]);
+    const key = `rec:${version}:${userId}:${state.profile_version}:${shortHash(opts)}`;
     const res = await this.cache.wrap(key, this.ttlS, () =>
       this.model.recommend(ctx, { state, k: opts.k, filters: opts.filters }),
     );
@@ -43,8 +43,8 @@ export class RecommendationService {
 
   /** Home rails. Views do not bump profile_version, so the newest view is part of the key. */
   async rails(ctx: CallContext, userId: string): Promise<RailsResponse> {
-    const state = await this.states.build(userId);
-    const key = `rails:${userId}:${state.profile_version}:${state.viewed[0] ?? 'none'}`;
+    const [state, version] = await Promise.all([this.states.build(userId), this.catalog.version()]);
+    const key = `rails:${version}:${userId}:${state.profile_version}:${state.viewed[0] ?? 'none'}`;
     const rails = await this.cache.wrap(key, this.ttlS, () => this.model.homeRails(ctx, { state }));
     const anchors = await this.catalog.getMany(rails.because_you_liked.map((b) => b.anchor_book_id));
     const h = (items: typeof rails.top_picks) => this.catalog.hydrate(items);

@@ -135,28 +135,40 @@ describe('HttpModelService', () => {
     expect(calls[0]?.init.body).toBeUndefined();
   });
 
-  it('accepts list responses wrapped in an envelope', async () => {
+  it('accepts only the published bare lists, not envelopes', async () => {
     const { svc } = client([
+      { status: 200, body: rec.items.slice(0, 3) },
+      { status: 200, body: [3, 1, 2] },
       { status: 200, body: { items: rec.items } },
-      { status: 200, body: { book_ids: [3, 1, 2] } },
     ]);
     await expect(svc.similarBooks(ctx, { bookId: 1, k: 3 })).resolves.toHaveLength(3);
     await expect(svc.onboardingGrid(ctx, { n: 3 })).resolves.toEqual([3, 1, 2]);
+    await expect(svc.moreByAuthor(ctx, { bookId: 1, k: 3 })).rejects.toMatchObject({
+      kind: 'bad_response',
+    });
   });
 
-  it('pages the catalogue by offset and computes the next offset', async () => {
-    const page = await mock.catalogPage(ctx, { cursor: null, limit: 30 });
-    const body = { bundle_version: 'bundle-v0', total: 43, offset: 0, limit: 30, items: page.items };
-    const { svc, calls } = client([
-      { status: 200, body },
-      { status: 200, body: { ...body, offset: 30, items: page.items.slice(0, 13) } },
-    ]);
-    const first = await svc.catalogPage(ctx, { cursor: null, limit: 30 });
-    expect(calls[0]?.url).toBe('http://model.test/v1/catalog?offset=0&limit=30');
-    expect(first.next_cursor).toBe(30);
-    expect(first.bundle_version).toBe('bundle-v0');
-    const second = await svc.catalogPage(ctx, { cursor: first.next_cursor, limit: 30 });
-    expect(calls[1]?.url).toBe('http://model.test/v1/catalog?offset=30&limit=30');
-    expect(second.next_cursor).toBeNull();
+  it('pages the catalogue by offset and returns the published page as is', async () => {
+    const page = await mock.catalogPage(ctx, { offset: 0, limit: 30 });
+    const body = {
+      bundle_version: 'bundle-v0',
+      total: 43,
+      offset: 30,
+      limit: 30,
+      items: page.items.slice(0, 13),
+    };
+    const { svc, calls } = client([{ status: 200, body }]);
+    const res = await svc.catalogPage(ctx, { offset: 30, limit: 30 });
+    expect(calls[0]?.url).toBe('http://model.test/v1/catalog?offset=30&limit=30');
+    expect(res).toEqual(body);
+  });
+
+  it('rejects a catalogue page missing a published field', async () => {
+    const page = await mock.catalogPage(ctx, { offset: 0, limit: 2 });
+    const { bundle_version: _omit, ...withoutVersion } = page;
+    const { svc } = client([{ status: 200, body: withoutVersion }]);
+    await expect(svc.catalogPage(ctx, { offset: 0, limit: 2 })).rejects.toMatchObject({
+      kind: 'bad_response',
+    });
   });
 });

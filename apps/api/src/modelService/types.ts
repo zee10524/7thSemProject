@@ -60,10 +60,8 @@ export interface ModelService {
   bookInsights(ctx: CallContext, args: { bookId: number }): Promise<BookInsights>;
   analyzeUserReview(ctx: CallContext, args: { text: string }): Promise<ReviewAnalysis>;
   metricsReport(ctx: CallContext): Promise<MetricsReport>;
-  catalogPage(
-    ctx: CallContext,
-    args: { cursor: string | number | null; limit: number },
-  ): Promise<CatalogPage>;
+  /** `GET /v1/catalog?offset=&limit=`: one page of the catalogue with its total and bundle version. */
+  catalogPage(ctx: CallContext, args: { offset: number; limit: number }): Promise<CatalogPage>;
 }
 
 export type FailureKind = 'unavailable' | 'rejected' | 'bad_response';

@@ -138,11 +138,23 @@ The client follows the service's published OpenAPI (`service/openapi.json`, vers
 routes such as `POST /v1/recommend`, `POST /v1/home-rails`, `POST /v1/chat-turn`,
 `GET /v1/book-insights/{book_id}` and `GET /v1/catalog?offset=&limit=`, with the headers `X-API-Key`,
 `X-Request-Id` and `X-Client-Id` (a keyed hash of the reader id, never an email). The routes live in one
-table at the top of `apps/api/src/modelService/http.ts`, and `apps/api/test/modelServiceContract.test.ts`
-checks every call against a vendored copy of that OpenAPI (refresh `test/fixtures` when it changes).
+table at the top of `apps/api/src/modelService/http.ts`, and every response is validated against the
+published shapes (a mismatch is a `bad_response`, never guessed at). `apps/api/test/modelServiceContract.test.ts`
+checks every request against a vendored copy of that OpenAPI and every MockModelService answer against
+its response schemas, so the mock and the real service are interchangeable by config (refresh
+`test/fixtures` and run `npm run gen:model-types -w @litsense/api` when the service changes).
 LLM-backed calls (explain, chat, onboarding, review analysis) are retried only when they certainly did not
-run: connection refused, 429 or 503. On boot the API warns when the service's `bundle_version` differs
-from the one the catalogue was seeded from.
+run: connection refused, 429 or 503. The seed pages `/v1/catalog` by offset until `total` and aborts if
+`bundle_version` changes mid-read. Caches keyed by book id (insights, onboarding grid, feed, rails,
+related books, search) include the catalogue's bundle version, so they roll over on a reseed. On boot the
+API warns when the service's `bundle_version` differs from the one the catalogue was seeded from.
+
+To run the end-to-end smoke test against a running model service instead of the mock (it uses its own
+database, `litsense_e2e_live`, seeded from the service on first start):
+
+```bash
+E2E_MODEL_SERVICE_MODE=http E2E_MODEL_SERVICE_URL=http://localhost:8000 E2E_MODEL_SERVICE_KEY=<SERVICE_API_KEY> npm run test:e2e
+```
 
 ## Environment variables
 
@@ -194,7 +206,7 @@ behind the Vercel rewrite or the nginx proxy.
 | `npm run typecheck`                        | `tsc --noEmit` in every workspace.                                    |
 | `npm test`                                 | Vitest in every workspace (API tests use mongodb-memory-server).      |
 | `npm run test:e2e`                         | Playwright smoke test; needs MongoDB (`docker compose up -d mongo`).  |
-| `npm run seed`                             | Seeds the catalogue (`-- --source=model                               | fixture --reset`). |
+| `npm run seed`                             | Seeds the catalogue (`-- --source=model` or `fixture`, `--reset`).    |
 | `npm run openapi -w @litsense/api`         | Regenerates `apps/api/openapi.json` from the route table.             |
 | `npm run dev:worker -w @litsense/api`      | Standalone BullMQ worker (when `WORKER_IN_PROCESS=false`).            |
 | `npm run gen:model-types -w @litsense/api` | Regenerates the model-service client types from the vendored OpenAPI. |
@@ -255,9 +267,9 @@ and re-runs the turn with an empty message.
 | Suite                                                                                   | Tool                                       | Count |
 | --------------------------------------------------------------------------------------- | ------------------------------------------ | ----- |
 | Shared contract (chip keys, schema rules)                                               | Vitest                                     | 7     |
-| API unit (breaker, retry, HTTP client, mock contract behaviour)                         | Vitest                                     | 32    |
-| API drift check (every client call against the model service's OpenAPI)                 | Vitest                                     | 2     |
-| API integration (auth, library, onboarding, chat, reviews, jobs, resilience, UserState) | Vitest + supertest + mongodb-memory-server | 39    |
+| API unit (breaker, retry, HTTP client, mock contract behaviour)                         | Vitest                                     | 33    |
+| API drift check (requests and mock responses against the model service's OpenAPI)       | Vitest + Ajv                               | 4     |
+| API integration (auth, library, onboarding, chat, reviews, jobs, resilience, seeding)   | Vitest + supertest + mongodb-memory-server | 43    |
 | Web unit (HTTP client, evidence parsing, components)                                    | Vitest + Testing Library                   | 13    |
 | End to end (sign up, onboarding, recommendations, explain, dismiss, chat, chip removal) | Playwright                                 | 1     |
 

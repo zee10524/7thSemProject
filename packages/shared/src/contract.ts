@@ -302,17 +302,13 @@ export const CatalogBook = z.object({
 });
 export type CatalogBook = z.infer<typeof CatalogBook>;
 
-/**
- * One page of `GET /v1/catalog`. The model service pages by offset (`offset`, `limit`, `total`,
- * `bundle_version`); clients normalise that into `next_cursor` (the next offset, or null at the end).
- */
+/** One page of `GET /v1/catalog?offset=&limit=`, as the model service's OpenAPI defines it. */
 export const CatalogPage = z.object({
+  bundle_version: z.string(),
+  total: z.number().int().min(0),
+  offset: z.number().int().min(0),
+  limit: z.number().int().min(1),
   items: z.array(CatalogBook),
-  next_cursor: z.union([z.string(), z.number()]).nullable().default(null),
-  total: z.number().int().optional(),
-  offset: z.number().int().optional(),
-  limit: z.number().int().optional(),
-  bundle_version: z.string().optional(),
 });
 export type CatalogPage = z.infer<typeof CatalogPage>;
 

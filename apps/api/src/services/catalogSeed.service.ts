@@ -17,6 +17,9 @@ export type SeedSource = 'model' | 'fixture';
 
 type BookFields = Omit<Book, 'createdAt' | 'updatedAt'>;
 
+/** The service's maximum page size for `/v1/catalog`. */
+const CATALOG_PAGE = 1000;
+
 function fromCatalogRow(row: CatalogBook, source: SeedSource): BookFields {
   return {
     bookId: row.book_id,
@@ -129,17 +132,23 @@ export class CatalogSeedService {
     }
   }
 
+  /** Pages `/v1/catalog` by offset until `total`; a bundle swap mid-way would mix two id spaces, so it aborts. */
   private async fetchModelCatalog(): Promise<{ rows: BookFields[]; bundleVersion: string | null }> {
     const rows: BookFields[] = [];
     let bundleVersion: string | null = null;
-    let cursor: string | number | null = null;
+    let offset = 0;
     const ctx = { requestId: `seed-${randomUUID()}` };
     for (let page = 0; page < 10_000; page += 1) {
-      const res = await this.model.catalogPage(ctx, { cursor, limit: 1000 });
-      bundleVersion ??= res.bundle_version ?? null;
+      const res = await this.model.catalogPage(ctx, { offset, limit: CATALOG_PAGE });
+      if (bundleVersion !== null && res.bundle_version !== bundleVersion) {
+        throw errors.conflict(
+          'The model service changed bundles while the catalogue was being read; rerun the seed.',
+        );
+      }
+      bundleVersion = res.bundle_version;
       rows.push(...res.items.map((r) => fromCatalogRow(r, 'model')));
-      if (res.next_cursor === null || res.next_cursor === undefined || !res.items.length) break;
-      cursor = res.next_cursor;
+      offset += res.items.length;
+      if (!res.items.length || offset >= res.total) break;
     }
     return { rows, bundleVersion };
   }

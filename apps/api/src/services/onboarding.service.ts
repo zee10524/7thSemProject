@@ -36,7 +36,8 @@ export class OnboardingService {
   ) {}
 
   async grid(ctx: CallContext): Promise<BookDto[]> {
-    const ids = await this.cache.wrap('onboarding-grid:60', 3600, () =>
+    const version = await this.catalog.version();
+    const ids = await this.cache.wrap(`onboarding-grid:${version}:60`, 3600, () =>
       this.model.onboardingGrid(ctx, { n: 60 }),
     );
     const books = await this.catalog.getMany(ids);

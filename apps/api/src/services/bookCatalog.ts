@@ -42,13 +42,30 @@ export function toBookDto(row: BookRow): BookDto {
  */
 export class BookCatalog {
   private ids: Promise<Set<number>> | null = null;
+  private tag: Promise<string> | null = null;
   private readonly dtos = new LRUCache<number, BookDto>({ max: 5000 });
 
   constructor(private readonly logger: Logger) {}
 
   invalidate(): void {
     this.ids = null;
+    this.tag = null;
     this.dtos.clear();
+  }
+
+  /**
+   * Which catalogue the ids belong to (source plus bundle version). Book ids change between bundles,
+   * so every cache keyed by a book id includes this and rolls over on a reseed.
+   */
+  version(): Promise<string> {
+    this.tag ??= bookRepository
+      .getMeta()
+      .then((m) => (m ? `${m.source}-${m.modelVersion ?? 'none'}` : 'unseeded'))
+      .catch((err: unknown) => {
+        this.tag = null;
+        throw err;
+      });
+    return this.tag;
   }
 
   knownIds(): Promise<Set<number>> {

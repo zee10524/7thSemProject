@@ -50,7 +50,8 @@ export class BookService {
 
   async insights(ctx: CallContext, bookId: number): Promise<InsightsDto> {
     await this.catalog.requireBook(bookId);
-    const res = await this.cache.wrap(`insights:${bookId}`, 24 * 3600, () =>
+    const version = await this.catalog.version();
+    const res = await this.cache.wrap(`insights:${version}:${bookId}`, 24 * 3600, () =>
       this.model.bookInsights(ctx, { bookId }),
     );
     return {
@@ -77,7 +78,8 @@ export class BookService {
     genres: string[] | undefined,
   ): Promise<SearchResponse> {
     const filters = genres?.length ? { genres_include: genres } : null;
-    const key = `search:${shortHash({ q: q.toLowerCase(), k, genres })}`;
+    const version = await this.catalog.version();
+    const key = `search:${version}:${shortHash({ q: q.toLowerCase(), k, genres })}`;
     const [hits, entity] = await this.cache.wrap(key, 300, () =>
       Promise.all([
         this.model.semanticSearch(ctx, { query: q, k, filters }),
@@ -112,7 +114,8 @@ export class BookService {
   ): Promise<RecItemDto[]> {
     await this.catalog.requireBook(bookId);
     const state = userId ? await this.states.build(userId) : null;
-    const key = `${kind}:${bookId}:${k}:${userId ?? 'anon'}:${state?.profile_version ?? 0}`;
+    const version = await this.catalog.version();
+    const key = `${kind}:${version}:${bookId}:${k}:${userId ?? 'anon'}:${state?.profile_version ?? 0}`;
     const items = await this.cache.wrap(key, this.ttlS, () =>
       kind === 'similar'
         ? this.model.similarBooks(ctx, { bookId, k, state })
