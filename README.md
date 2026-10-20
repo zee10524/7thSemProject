@@ -40,7 +40,7 @@ flowchart LR
   API --> MONGO
   API --> REDIS
   REDIS --> WORKER --> MONGO
-  API -- X-Service-Key, X-Request-Id --> MODEL
+  API -- X-API-Key, X-Request-Id, X-Client-Id --> MODEL
   WORKER --> MODEL
   API -. MODEL_SERVICE_MODE=mock .-> MOCK
 ```
@@ -121,11 +121,12 @@ links to `/admin` (service health, breaker state, evaluation metrics, catalogue 
 
 ### Using the real model service
 
-1. Start the model service (branch `serve-api` of zee10524/LightGcn; it publishes `service/openapi.json`).
-   To run it from this compose file, point `MODEL_SERVICE_CONTEXT` at its checkout and use
+1. Start the model service (branch `serve-api` of zee10524/LightGcn, see its `service/README.md`). It
+   needs `SERVICE_API_KEY` and a bundle (`BUNDLE_URL`). To run it from this compose file, put those in
+   `.env.model`, point `MODEL_SERVICE_CONTEXT` at its checkout and use
    `docker compose --profile model up --build`.
 2. In `.env`: `MODEL_SERVICE_MODE=http`, `MODEL_SERVICE_URL=http://model:8000` (or its host),
-   `MODEL_SERVICE_KEY=<the shared secret>`.
+   `MODEL_SERVICE_KEY=<the same value as the service's SERVICE_API_KEY>`.
 3. Book ids are the core's `book_id`s, so switching catalogues needs a reseed. The seed refuses to
    silently remap ids; with `--reset` it clears reader data (ratings, shelves, reviews, chats):
 
@@ -133,9 +134,15 @@ links to `/admin` (service health, breaker state, evaluation metrics, catalogue 
 npm run seed -- --source=model --reset
 ```
 
-The client's routes live in one table at the top of `apps/api/src/modelService/http.ts`
-(`POST /v1/<function>` with the function's arguments as JSON, `GET /v1/catalog?cursor=&limit=`). If the
-model service's published OpenAPI differs, that table is the only place to change.
+The client follows the service's published OpenAPI (`service/openapi.json`, version 0.1.0): kebab-case
+routes such as `POST /v1/recommend`, `POST /v1/home-rails`, `POST /v1/chat-turn`,
+`GET /v1/book-insights/{book_id}` and `GET /v1/catalog?offset=&limit=`, with the headers `X-API-Key`,
+`X-Request-Id` and `X-Client-Id` (a keyed hash of the reader id, never an email). The routes live in one
+table at the top of `apps/api/src/modelService/http.ts`, and `apps/api/test/modelServiceContract.test.ts`
+checks every call against a vendored copy of that OpenAPI (refresh `test/fixtures` when it changes).
+LLM-backed calls (explain, chat, onboarding, review analysis) are retried only when they certainly did not
+run: connection refused, 429 or 503. On boot the API warns when the service's `bundle_version` differs
+from the one the catalogue was seeded from.
 
 ## Environment variables
 
@@ -159,7 +166,7 @@ with a development secret. `.env.example` lists every one; only placeholders are
 | `ADMIN_EMAILS`                              | empty                                         | Accounts registered with these emails get the admin role.                               |
 | `MODEL_SERVICE_MODE`                        | `mock`                                        | `mock` (in-process) or `http` (the Python model service).                               |
 | `MODEL_SERVICE_URL`                         | none                                          | Required for `http`.                                                                    |
-| `MODEL_SERVICE_KEY`                         | none                                          | Required for `http`; sent as `X-Service-Key`.                                           |
+| `MODEL_SERVICE_KEY`                         | none                                          | Required for `http`; sent as `X-API-Key` (the service's `SERVICE_API_KEY`).             |
 | `MODEL_SERVICE_TIMEOUT_MS`                  | `4000`                                        | Timeout for fast calls (recommend, rails, search, insights).                            |
 | `MODEL_SERVICE_SLOW_TIMEOUT_MS`             | `15000`                                       | Timeout for LLM-backed calls (explain, chat, onboarding, review analysis).              |
 | `MODEL_SERVICE_RETRIES`                     | `2`                                           | Retries with full-jitter backoff on network errors, 429 and 5xx.                        |
@@ -247,7 +254,8 @@ and re-runs the turn with an empty message.
 | Suite                                                                                   | Tool                                       | Count |
 | --------------------------------------------------------------------------------------- | ------------------------------------------ | ----- |
 | Shared contract (chip keys, schema rules)                                               | Vitest                                     | 7     |
-| API unit (breaker, retry, HTTP client, mock contract behaviour)                         | Vitest                                     | 31    |
+| API unit (breaker, retry, HTTP client, mock contract behaviour)                         | Vitest                                     | 32    |
+| API drift check (every client call against the model service's OpenAPI)                 | Vitest                                     | 2     |
 | API integration (auth, library, onboarding, chat, reviews, jobs, resilience, UserState) | Vitest + supertest + mongodb-memory-server | 39    |
 | Web unit (HTTP client, evidence parsing, components)                                    | Vitest + Testing Library                   | 13    |
 | End to end (sign up, onboarding, recommendations, explain, dismiss, chat, chip removal) | Playwright                                 | 1     |

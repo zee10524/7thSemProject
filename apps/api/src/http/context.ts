@@ -13,6 +13,8 @@ declare module 'express-serve-static-core' {
     user?: AuthUser;
     /** True when the access token came from a cookie (CSRF applies) rather than a Bearer header. */
     cookieAuth?: boolean;
+    /** Reader pseudonym forwarded to the model service as X-Client-Id. */
+    clientId?: string;
   }
 }
 
@@ -30,5 +32,5 @@ export function callContext(req: Request, res: Response): CallContext {
   res.once('close', () => {
     if (!res.writableFinished) controller.abort(new Error('client closed the connection'));
   });
-  return { requestId: req.id, signal: controller.signal };
+  return { requestId: req.id, clientId: req.clientId, signal: controller.signal };
 }

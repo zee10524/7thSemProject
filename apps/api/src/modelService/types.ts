@@ -20,6 +20,8 @@ import type {
 /** Per-call context: the request id is forwarded as X-Request-Id for cross-service tracing. */
 export interface CallContext {
   requestId: string;
+  /** Per-reader pseudonym for the model service's rate limiter (`X-Client-Id`); never an email or id. */
+  clientId?: string;
   signal?: AbortSignal;
 }
 

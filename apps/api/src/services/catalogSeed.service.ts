@@ -82,7 +82,9 @@ export class CatalogSeedService {
         `The catalogue was seeded from "${meta.source}". Switching to "${source}" changes book ids; rerun with reset to clear reader data.`,
       );
     }
-    const rows = source === 'fixture' ? fixtureRows() : await this.fetchModelCatalog();
+    const fetched =
+      source === 'fixture' ? { rows: fixtureRows(), bundleVersion: null } : await this.fetchModelCatalog();
+    const { rows } = fetched;
     if (!rows.length) throw errors.badRequest('The catalogue is empty; nothing to seed.');
 
     if (opts.reset) await this.resetReaderData();
@@ -91,35 +93,55 @@ export class CatalogSeedService {
     }));
     for (let i = 0; i < ops.length; i += 1000) await bookRepository.bulkUpsert(ops.slice(i, i + 1000));
     await bookRepository.deleteNotIn(rows.map((r) => r.bookId));
-    let modelVersion: string | null = null;
-    try {
-      modelVersion = (await this.model.health({ requestId: `seed-${randomUUID()}` })).bundle_version ?? null;
-    } catch {
-      modelVersion = null;
-    }
+    const modelVersion = fetched.bundleVersion ?? (await this.currentBundleVersion());
     await bookRepository.setMeta({ source, modelVersion, count: rows.length });
     this.catalog.invalidate();
-    this.logger.info({ source, count: rows.length }, 'catalogue seeded');
+    this.logger.info({ source, count: rows.length, modelVersion }, 'catalogue seeded');
     return { upserted: rows.length, source };
   }
 
-  /** Seeds on boot when the collection is empty (SEED_ON_BOOT). */
+  /**
+   * On boot: seed an empty catalogue; otherwise warn when the model service now serves a different
+   * bundle than the one the catalogue came from (its book ids may differ, so reseeding is a human call).
+   */
   async seedIfEmpty(): Promise<void> {
-    if ((await bookRepository.count()) > 0) return;
-    await this.seed();
+    if ((await bookRepository.count()) === 0) {
+      await this.seed();
+      return;
+    }
+    const meta = await bookRepository.getMeta();
+    if (meta?.source !== 'model') return;
+    const live = await this.currentBundleVersion();
+    if (live && meta.modelVersion && live !== meta.modelVersion) {
+      this.logger.warn(
+        { seeded: meta.modelVersion, live },
+        'the model service serves a different bundle than the seeded catalogue; reseed (npm run seed -- --source=model)',
+      );
+    }
   }
 
-  private async fetchModelCatalog(): Promise<BookFields[]> {
-    const out: BookFields[] = [];
+  private async currentBundleVersion(): Promise<string | null> {
+    try {
+      const health = await this.model.health({ requestId: `seed-${randomUUID()}` });
+      return typeof health.bundle_version === 'string' ? health.bundle_version : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private async fetchModelCatalog(): Promise<{ rows: BookFields[]; bundleVersion: string | null }> {
+    const rows: BookFields[] = [];
+    let bundleVersion: string | null = null;
     let cursor: string | number | null = null;
     const ctx = { requestId: `seed-${randomUUID()}` };
-    for (let page = 0; page < 1000; page += 1) {
-      const res = await this.model.catalogPage(ctx, { cursor, limit: 500 });
-      out.push(...res.items.map((r) => fromCatalogRow(r, 'model')));
+    for (let page = 0; page < 10_000; page += 1) {
+      const res = await this.model.catalogPage(ctx, { cursor, limit: 1000 });
+      bundleVersion ??= res.bundle_version ?? null;
+      rows.push(...res.items.map((r) => fromCatalogRow(r, 'model')));
       if (res.next_cursor === null || res.next_cursor === undefined || !res.items.length) break;
       cursor = res.next_cursor;
     }
-    return out;
+    return { rows, bundleVersion };
   }
 
   private async resetReaderData(): Promise<void> {

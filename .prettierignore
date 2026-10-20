@@ -6,3 +6,4 @@ prototype
 playwright-report
 test-results
 apps/web/src/styles/prototype
+apps/api/test/fixtures

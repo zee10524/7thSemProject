@@ -9,7 +9,8 @@ import { safeEqual } from '../../lib/hash.js';
 import type { TokenService } from '../../services/token.service.js';
 import { COOKIE } from '../context.js';
 
-const REQUEST_ID = /^[A-Za-z0-9._-]{8,128}$/;
+// Same alphabet and length the model service accepts, so the id survives the hop unchanged.
+const REQUEST_ID = /^[A-Za-z0-9._:-]{8,64}$/;
 
 /** Accepts a well-formed incoming X-Request-Id (for tracing across services) or makes one. */
 export function requestId(): RequestHandler {
@@ -33,6 +34,7 @@ export function authenticate(tokens: TokenService): RequestHandler {
       if (claims) {
         req.user = { id: claims.sub, role: claims.role };
         req.cookieAuth = !bearer;
+        req.clientId = tokens.pseudonym(claims.sub);
       }
     }
     next();

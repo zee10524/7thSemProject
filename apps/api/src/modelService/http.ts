@@ -31,33 +31,44 @@ export interface HttpModelServiceOptions {
   random?: () => number;
 }
 
+type RouteSpec = { method: 'GET' | 'POST'; path: string; slow: boolean; retry: 'safe' | 'once' };
+
 /**
- * One route per contract function. `retry: 'safe'` retries on network errors, timeouts, 429 and 5xx;
- * `'connect'` (LLM-backed calls with long timeouts) retries only when the connection itself failed.
- * Paths follow the model service's `/v1/<function>` layout; change them here if its OpenAPI differs.
+ * The model service's routes (zee10524/LightGcn, branch serve-api, `service/openapi.json`): one route
+ * per contract function, request fields exactly as the function's arguments (unknown fields are a 400).
+ *
+ * `retry: 'safe'` retries network errors, timeouts, 429 and 5xx. `'once'` (LLM-backed calls with long
+ * timeouts and a cost per call) retries only when the request certainly did not run: the connection
+ * failed, or the service answered 429 or 503 (not ready / overloaded).
  */
 const ROUTES = {
-  health: { method: 'GET', path: '/v1/health', slow: false, retry: 'safe' },
+  health: { method: 'GET', path: '/health', slow: false, retry: 'safe' },
   recommend: { method: 'POST', path: '/v1/recommend', slow: false, retry: 'safe' },
-  home_rails: { method: 'POST', path: '/v1/home_rails', slow: false, retry: 'safe' },
-  similar_books: { method: 'POST', path: '/v1/similar_books', slow: false, retry: 'safe' },
-  more_by_author: { method: 'POST', path: '/v1/more_by_author', slow: false, retry: 'safe' },
-  semantic_search: { method: 'POST', path: '/v1/semantic_search', slow: false, retry: 'safe' },
-  resolve_entities: { method: 'POST', path: '/v1/resolve_entities', slow: false, retry: 'safe' },
-  onboarding_grid: { method: 'GET', path: '/v1/onboarding_grid', slow: false, retry: 'safe' },
-  parse_onboarding: { method: 'POST', path: '/v1/parse_onboarding', slow: true, retry: 'connect' },
-  explain: { method: 'POST', path: '/v1/explain', slow: true, retry: 'connect' },
-  chat_turn: { method: 'POST', path: '/v1/chat_turn', slow: true, retry: 'connect' },
-  book_insights: { method: 'POST', path: '/v1/book_insights', slow: false, retry: 'safe' },
-  analyze_user_review: { method: 'POST', path: '/v1/analyze_user_review', slow: true, retry: 'connect' },
-  metrics_report: { method: 'GET', path: '/v1/metrics_report', slow: false, retry: 'safe' },
+  home_rails: { method: 'POST', path: '/v1/home-rails', slow: false, retry: 'safe' },
+  similar_books: { method: 'POST', path: '/v1/similar-books', slow: false, retry: 'safe' },
+  more_by_author: { method: 'POST', path: '/v1/more-by-author', slow: false, retry: 'safe' },
+  semantic_search: { method: 'POST', path: '/v1/semantic-search', slow: false, retry: 'safe' },
+  resolve_entities: { method: 'POST', path: '/v1/resolve-entities', slow: false, retry: 'safe' },
+  onboarding_grid: { method: 'GET', path: '/v1/onboarding-grid', slow: false, retry: 'safe' },
+  parse_onboarding: { method: 'POST', path: '/v1/parse-onboarding', slow: true, retry: 'once' },
+  explain: { method: 'POST', path: '/v1/explain', slow: true, retry: 'once' },
+  chat_turn: { method: 'POST', path: '/v1/chat-turn', slow: true, retry: 'once' },
+  book_insights: { method: 'GET', path: '/v1/book-insights/{book_id}', slow: false, retry: 'safe' },
+  analyze_user_review: { method: 'POST', path: '/v1/analyze-user-review', slow: true, retry: 'once' },
+  metrics_report: { method: 'GET', path: '/v1/metrics-report', slow: false, retry: 'safe' },
   catalog: { method: 'GET', path: '/v1/catalog', slow: true, retry: 'safe' },
-} as const satisfies Record<
-  string,
-  { method: 'GET' | 'POST'; path: string; slow: boolean; retry: 'safe' | 'connect' }
->;
+} as const satisfies Record<string, RouteSpec>;
 
 type Operation = keyof typeof ROUTES;
+
+/** The route table, for the drift test against the model service's published OpenAPI. */
+export const MODEL_ROUTES: Readonly<Record<string, RouteSpec>> = ROUTES;
+
+interface CallInput {
+  body?: unknown;
+  query?: Record<string, string>;
+  params?: Record<string, string | number>;
+}
 
 /** Accepts a bare list or a list wrapped in a common envelope key. */
 function listOf<T extends z.ZodType>(item: T) {
@@ -77,7 +88,8 @@ class RetryableError extends Error {
   constructor(
     message: string,
     readonly status?: number,
-    readonly connectFailure = false,
+    /** The request certainly did not run (connection refused, 429, 503): safe to retry any route. */
+    readonly notExecuted = false,
     readonly retryAfterMs?: number,
   ) {
     super(message);
@@ -89,6 +101,11 @@ const CONNECT_CODES = new Set(['ECONNREFUSED', 'ECONNRESET', 'ENOTFOUND', 'EAI_A
 function isConnectFailure(err: unknown): boolean {
   const cause = (err as { cause?: { code?: string } })?.cause;
   return Boolean(cause?.code && CONNECT_CODES.has(cause.code));
+}
+
+function retryAfterMs(res: Response): number | undefined {
+  const s = Number(res.headers.get('retry-after'));
+  return Number.isFinite(s) && s > 0 ? s * 1000 : undefined;
 }
 
 export class HttpModelService implements ModelService {
@@ -148,7 +165,9 @@ export class HttpModelService implements ModelService {
   }
 
   onboardingGrid(ctx: CallContext, a: { n: number }) {
-    return this.call('onboarding_grid', listOf(z.number().int().min(0)), ctx, { query: { n: String(a.n) } });
+    return this.call('onboarding_grid', listOf(z.number().int().min(0)), ctx, {
+      query: { n: String(a.n) },
+    });
   }
 
   parseOnboarding(ctx: CallContext, a: { text: string; picks: number[] }) {
@@ -166,7 +185,7 @@ export class HttpModelService implements ModelService {
   }
 
   bookInsights(ctx: CallContext, a: { bookId: number }) {
-    return this.call('book_insights', BookInsights, ctx, { body: { book_id: a.bookId } });
+    return this.call('book_insights', BookInsights, ctx, { params: { book_id: a.bookId } });
   }
 
   analyzeUserReview(ctx: CallContext, a: { text: string }) {
@@ -177,19 +196,25 @@ export class HttpModelService implements ModelService {
     return this.call('metrics_report', MetricsReport, ctx);
   }
 
-  catalogPage(ctx: CallContext, a: { cursor: string | number | null; limit: number }) {
-    const query: Record<string, string> = { limit: String(a.limit) };
-    if (a.cursor !== null && a.cursor !== undefined) query.cursor = String(a.cursor);
-    return this.call('catalog', CatalogPage, ctx, { query });
+  /** The service pages by offset; the cursor here is that offset, and the next one is computed. */
+  async catalogPage(ctx: CallContext, a: { cursor: string | number | null; limit: number }) {
+    const offset = a.cursor === null || a.cursor === undefined ? 0 : Number(a.cursor);
+    const page = await this.call('catalog', CatalogPage, ctx, {
+      query: { offset: String(offset), limit: String(a.limit) },
+    });
+    const start = page.offset ?? offset;
+    const end = start + page.items.length;
+    const more = page.total !== undefined ? end < page.total : page.next_cursor !== null;
+    return { ...page, next_cursor: more && page.items.length ? end : null };
   }
 
   private async call<S extends z.ZodType>(
     op: Operation,
     schema: S,
     ctx: CallContext,
-    input: { body?: unknown; query?: Record<string, string> } = {},
+    input: CallInput = {},
   ): Promise<z.output<S>> {
-    const route = ROUTES[op];
+    const route: RouteSpec = ROUTES[op];
     const maxAttempts = 1 + this.opts.retries;
     let lastError: RetryableError | undefined;
 
@@ -198,7 +223,7 @@ export class HttpModelService implements ModelService {
         throw new ModelServiceError('unavailable', 'circuit open', op);
       }
       try {
-        const data = await this.once(op, input, ctx);
+        const data = await this.once(route, op, input, ctx);
         const parsed = schema.safeParse(data);
         if (!parsed.success) {
           this.opts.logger.error(
@@ -211,7 +236,7 @@ export class HttpModelService implements ModelService {
       } catch (err) {
         if (!(err instanceof RetryableError)) throw err;
         lastError = err;
-        const canRetry = route.retry === 'safe' || err.connectFailure;
+        const canRetry = route.retry === 'safe' || err.notExecuted;
         if (!canRetry || attempt === maxAttempts - 1 || ctx.signal?.aborted) break;
         const delay = Math.max(err.retryAfterMs ?? 0, backoffDelay(attempt, 150, 2000, this.opts.random));
         this.opts.logger.warn(
@@ -225,13 +250,11 @@ export class HttpModelService implements ModelService {
   }
 
   /** One HTTP attempt. Resolves with parsed JSON, throws RetryableError or ModelServiceError. */
-  private async once(
-    op: Operation,
-    input: { body?: unknown; query?: Record<string, string> },
-    ctx: CallContext,
-  ) {
-    const route = ROUTES[op];
-    const url = new URL(this.baseUrl + route.path);
+  private async once(route: RouteSpec, op: Operation, input: CallInput, ctx: CallContext) {
+    const path = route.path.replace(/\{(\w+)\}/g, (_, name: string) =>
+      encodeURIComponent(String(input.params?.[name] ?? '')),
+    );
+    const url = new URL(this.baseUrl + path);
     for (const [k, v] of Object.entries(input.query ?? {})) url.searchParams.set(k, v);
     const timeoutMs = route.slow ? this.opts.slowTimeoutMs : this.opts.timeoutMs;
     const controller = new AbortController();
@@ -247,8 +270,9 @@ export class HttpModelService implements ModelService {
           method: route.method,
           headers: {
             accept: 'application/json',
-            'x-service-key': this.opts.serviceKey,
+            'x-api-key': this.opts.serviceKey,
             'x-request-id': ctx.requestId,
+            ...(ctx.clientId ? { 'x-client-id': ctx.clientId } : {}),
             ...(route.method === 'POST' ? { 'content-type': 'application/json' } : {}),
           },
           body: route.method === 'POST' ? JSON.stringify(input.body ?? {}) : undefined,
@@ -263,20 +287,22 @@ export class HttpModelService implements ModelService {
       }
 
       const ms = Math.round(performance.now() - started);
-      this.opts.logger.debug({ op, status: res.status, ms, requestId: ctx.requestId }, 'model service call');
+      this.opts.logger.debug(
+        {
+          op,
+          status: res.status,
+          ms,
+          requestId: ctx.requestId,
+          fallback: res.headers.get('x-litsense-fallback'),
+        },
+        'model service call',
+      );
 
-      if (res.status === 429) {
-        const retryAfter = Number(res.headers.get('retry-after'));
-        throw new RetryableError(
-          'rate limited',
-          429,
-          false,
-          Number.isFinite(retryAfter) ? retryAfter * 1000 : undefined,
-        );
-      }
+      if (res.status === 429) throw new RetryableError('rate limited', 429, true, retryAfterMs(res));
       if (res.status >= 500) {
         this.opts.breaker.onFailure();
-        throw new RetryableError(`upstream ${res.status}`, res.status);
+        // 503 is "not ready" or "overloaded": the call did not run, so even LLM routes may retry it.
+        throw new RetryableError(`upstream ${res.status}`, res.status, res.status === 503, retryAfterMs(res));
       }
       // The service answered: it is up, whatever the answer.
       this.opts.breaker.onSuccess();

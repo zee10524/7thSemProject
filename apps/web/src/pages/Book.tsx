@@ -11,7 +11,7 @@ import {
   useReview,
   useSimilar,
 } from '../api/hooks';
-import { errorMessage } from '../api/http';
+import { errorMessage, isApiError } from '../api/http';
 import {
   AspectRow,
   Bar,
@@ -285,9 +285,11 @@ export default function BookPage() {
   }, [valid, bookId, book.data, recordView]);
 
   if (!valid || book.isError) {
+    const missing =
+      !valid || (isApiError(book.error) && (book.error.status === 404 || book.error.status === 400));
     return (
       <div className="container">
-        {book.isError && !(book.error && 'status' in book.error && book.error.status === 404) ? (
+        {!missing ? (
           <ErrorState error={book.error} onRetry={() => void book.refetch()} />
         ) : (
           <Empty

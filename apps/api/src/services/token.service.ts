@@ -56,6 +56,11 @@ export class TokenService {
     return sha256(raw);
   }
 
+  /** Stable, non-reversible reader pseudonym for the model service's per-client rate limit. */
+  pseudonym(userId: string): string {
+    return hmac(this.secret, `client:${userId}`).slice(0, 22);
+  }
+
   /** CSRF token: `<random>.<hmac(random)>`. The same value goes in an httpOnly cookie and the header. */
   newCsrfToken(): string {
     const nonce = randomToken(18);

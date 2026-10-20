@@ -50,14 +50,18 @@ const mock = new MockModelService();
 const rec = await mock.recommend(ctx, { state: UserState.parse({}), k: 3 });
 
 describe('HttpModelService', () => {
-  it('posts the contract body with the service key and request id', async () => {
+  it('posts the contract body with the API key, request id and reader pseudonym', async () => {
     const { svc, calls } = client([{ status: 200, body: rec }]);
-    const res = await svc.recommend(ctx, { state, k: 3, filters: { max_pages: 300 } });
+    const res = await svc.recommend(
+      { ...ctx, clientId: 'reader-pseudonym' },
+      { state, k: 3, filters: { max_pages: 300 } },
+    );
     expect(res.items).toHaveLength(3);
     expect(calls[0]?.url).toBe('http://model.test/v1/recommend');
     const headers = calls[0]?.init.headers as Record<string, string>;
-    expect(headers['x-service-key']).toBe('svc-key');
+    expect(headers['x-api-key']).toBe('svc-key');
     expect(headers['x-request-id']).toBe('req-test-0001');
+    expect(headers['x-client-id']).toBe('reader-pseudonym');
     expect(JSON.parse(String(calls[0]?.init.body))).toMatchObject({
       k: 3,
       filters: { max_pages: 300 },
@@ -100,20 +104,35 @@ describe('HttpModelService', () => {
     expect(calls).toHaveLength(2);
   });
 
-  it('retries an LLM-backed call only when the connection itself failed', async () => {
+  it('retries an LLM-backed call only when it certainly did not run', async () => {
     const refused = Object.assign(new TypeError('fetch failed'), { cause: { code: 'ECONNREFUSED' } });
     const reply = await mock.chatTurn(ctx, { state: UserState.parse({}), session: null, message: 'cozy' });
-    const a = client([refused, { status: 200, body: reply }]);
-    await expect(a.svc.chatTurn(ctx, { state, session: null, message: 'cozy' })).resolves.toMatchObject({
-      intro: reply.intro,
-    });
-    expect(a.calls).toHaveLength(2);
+    const chat = (svc: HttpModelService) => svc.chatTurn(ctx, { state, session: null, message: 'cozy' });
+
+    const a = client([
+      refused,
+      { status: 503, headers: { 'retry-after': '0' } },
+      { status: 200, body: reply },
+    ]);
+    await expect(chat(a.svc)).resolves.toMatchObject({ intro: reply.intro });
+    expect(a.calls).toHaveLength(3); // connection refused, then 503 overloaded, then success
 
     const b = client([new Error('socket hang up'), { status: 200, body: reply }]);
-    await expect(b.svc.chatTurn(ctx, { state, session: null, message: 'cozy' })).rejects.toMatchObject({
-      kind: 'unavailable',
-    });
+    await expect(chat(b.svc)).rejects.toMatchObject({ kind: 'unavailable' });
     expect(b.calls).toHaveLength(1);
+
+    const c = client([{ status: 500 }, { status: 200, body: reply }]);
+    await expect(chat(c.svc)).rejects.toMatchObject({ kind: 'unavailable' });
+    expect(c.calls).toHaveLength(1); // a 500 may have spent an LLM call: no retry
+  });
+
+  it('gets insights by path parameter', async () => {
+    const insights = await mock.bookInsights(ctx, { bookId: 4 });
+    const { svc, calls } = client([{ status: 200, body: insights }]);
+    await svc.bookInsights(ctx, { bookId: 4 });
+    expect(calls[0]?.url).toBe('http://model.test/v1/book-insights/4');
+    expect(calls[0]?.init.method).toBe('GET');
+    expect(calls[0]?.init.body).toBeUndefined();
   });
 
   it('accepts list responses wrapped in an envelope', async () => {
@@ -125,10 +144,19 @@ describe('HttpModelService', () => {
     await expect(svc.onboardingGrid(ctx, { n: 3 })).resolves.toEqual([3, 1, 2]);
   });
 
-  it('passes the catalogue cursor as a query string', async () => {
-    const { svc, calls } = client([{ status: 200, body: { items: [], next_cursor: null } }]);
-    await svc.catalogPage(ctx, { cursor: 'abc', limit: 500 });
-    expect(calls[0]?.url).toBe('http://model.test/v1/catalog?limit=500&cursor=abc');
-    expect(calls[0]?.init.method).toBe('GET');
+  it('pages the catalogue by offset and computes the next offset', async () => {
+    const page = await mock.catalogPage(ctx, { cursor: null, limit: 30 });
+    const body = { bundle_version: 'bundle-v0', total: 43, offset: 0, limit: 30, items: page.items };
+    const { svc, calls } = client([
+      { status: 200, body },
+      { status: 200, body: { ...body, offset: 30, items: page.items.slice(0, 13) } },
+    ]);
+    const first = await svc.catalogPage(ctx, { cursor: null, limit: 30 });
+    expect(calls[0]?.url).toBe('http://model.test/v1/catalog?offset=0&limit=30');
+    expect(first.next_cursor).toBe(30);
+    expect(first.bundle_version).toBe('bundle-v0');
+    const second = await svc.catalogPage(ctx, { cursor: first.next_cursor, limit: 30 });
+    expect(calls[1]?.url).toBe('http://model.test/v1/catalog?offset=30&limit=30');
+    expect(second.next_cursor).toBeNull();
   });
 });

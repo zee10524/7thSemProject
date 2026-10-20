@@ -1135,7 +1135,14 @@ export class MockModelService implements ModelService {
     const rows = catalogRows();
     const items = rows.slice(start, start + a.limit);
     const next = start + a.limit < rows.length ? String(start + a.limit) : null;
-    return { items, next_cursor: next, total: rows.length };
+    return {
+      items,
+      next_cursor: next,
+      total: rows.length,
+      offset: start,
+      limit: a.limit,
+      bundle_version: MOCK_MODEL_VERSION,
+    };
   }
 }
 
