@@ -5,7 +5,8 @@ import { errors } from '../lib/errors.js';
 import type { Logger } from '../lib/logger.js';
 import type { Book } from '../models/index.js';
 import { BOOKS as FIXTURE_BOOKS } from '../modelService/mock/catalog.js';
-import type { ModelService } from '../modelService/index.js';
+import { type ModelService, ModelServiceError } from '../modelService/index.js';
+import { sleep } from '../modelService/retry.js';
 import { bookRepository } from '../repositories/book.repository.js';
 import { chatRepository } from '../repositories/chat.repository.js';
 import { libraryRepository } from '../repositories/library.repository.js';
@@ -120,6 +121,31 @@ export class CatalogSeedService {
         { seeded: meta.modelVersion, live },
         'the model service serves a different bundle than the seeded catalogue; reseed (npm run seed -- --source=model)',
       );
+    }
+  }
+
+  /**
+   * Boot-time seeding that waits out a model service still loading its bundle: retries with
+   * backoff (2 s doubling to 30 s) while the service is unavailable, until it succeeds or `signal`
+   * aborts. Any other failure (a conflict, a malformed page) is logged once and not retried.
+   */
+  async seedOnBoot(signal: AbortSignal, baseDelayMs = 2_000): Promise<void> {
+    for (let attempt = 0; !signal.aborted; attempt += 1) {
+      try {
+        await this.seedIfEmpty();
+        return;
+      } catch (err) {
+        if (!(err instanceof ModelServiceError) || err.kind !== 'unavailable') {
+          this.logger.error({ err: (err as Error).message }, 'catalogue seed on boot failed');
+          return;
+        }
+        const retryInMs = Math.min(30_000, baseDelayMs * 2 ** attempt);
+        this.logger.warn(
+          { attempt: attempt + 1, retryInMs, reason: err.message },
+          'model service unavailable; the catalogue seed will retry',
+        );
+        await sleep(retryInMs, signal).catch(() => undefined);
+      }
     }
   }
 

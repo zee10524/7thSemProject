@@ -18,11 +18,10 @@ async function main(): Promise<void> {
   const c = createContainer(config, logger, redis);
   logger.info({ modelMode: c.model.mode, cache: c.cache.kind, jobs: c.jobs.kind }, 'container ready');
 
-  if (config.SEED_ON_BOOT) {
-    await c.seed
-      .seedIfEmpty()
-      .catch((err: Error) => logger.error({ err: err.message }, 'catalogue seed on boot failed'));
-  }
+  // Seeding waits for a model service that is still loading, so it runs beside the server:
+  // /healthz answers at once, /readyz says not_ready until the catalogue exists.
+  const booting = new AbortController();
+  if (config.SEED_ON_BOOT) void c.seed.seedOnBoot(booting.signal);
 
   let worker: Worker | null = null;
   if (redis && config.WORKER_IN_PROCESS) {
@@ -46,6 +45,7 @@ async function main(): Promise<void> {
   const shutdown = async (signal: string) => {
     if (stopping) return;
     stopping = true;
+    booting.abort();
     logger.info({ signal }, 'shutting down');
     const force = setTimeout(() => {
       logger.error('forced exit after 15 s');

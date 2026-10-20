@@ -722,6 +722,7 @@ export class MockModelService implements ModelService {
   async health(_ctx: CallContext): Promise<ModelHealth> {
     return {
       status: 'ok',
+      ready: true,
       mock: true,
       api_version: '0.1.0',
       bundle_version: MOCK_MODEL_VERSION,

@@ -70,21 +70,28 @@ services:
     depends_on:
       - api
 
-  # Placeholder for the Python model service (litsense_core over HTTP, branch serve-api of
-  # zee10524/LightGcn). Point MODEL_SERVICE_IMAGE at its image, or MODEL_SERVICE_CONTEXT at a checkout.
+  # The Python model service (litsense_core over HTTP, zee10524/LightGcn main, service/README.md).
+  # Built from a checkout (MODEL_SERVICE_CONTEXT) or a prebuilt image (MODEL_SERVICE_IMAGE).
+  # .env.model sets SERVICE_API_KEY (the API's MODEL_SERVICE_KEY must match), BUNDLE_URL and
+  # optionally GEMINI_API_KEY. MODEL_BUNDLE_DIR may name a host folder holding an extracted bundle;
+  # by default the bundle is downloaded once into the model-bundle volume. The API's boot seed
+  # waits until the service has loaded, so no start order is needed.
   model:
     profiles: ['model']
-    image: ${MODEL_SERVICE_IMAGE:-litsense-model:local}
+    image: ${MODEL_SERVICE_IMAGE:-litsense-service:local}
     build:
       context: ${MODEL_SERVICE_CONTEXT:-../LitSense-service}
-      dockerfile: ${MODEL_SERVICE_DOCKERFILE:-service/Dockerfile}
+      dockerfile: service/Dockerfile
     restart: unless-stopped
     env_file:
       - path: .env.model
         required: false
+    volumes:
+      - ${MODEL_BUNDLE_DIR:-model-bundle}:/var/litsense
     ports:
       - '8000:8000'
 
 volumes:
   mongo-data:
   redis-data:
+  model-bundle:

@@ -80,14 +80,27 @@ export function createApp(c: Container): Express {
         .then(() => ({ ok: true }))
         .catch((err: Error) => ({ ok: false, detail: err.message }));
     }
+    checks.catalog = await c.catalog
+      .knownIds()
+      .then((ids) => ({ ok: ids.size > 0, detail: `${ids.size} books` }))
+      .catch((err: Error) => ({ ok: false, detail: err.message }));
     const breaker = c.breaker.snapshot();
     checks.model = await c.model
       .health({ requestId: req.id })
-      .then(() => ({ ok: true, detail: `${c.model.mode}, breaker ${breaker.state}` }))
+      .then((h) =>
+        h.ready === false
+          ? { ok: false, detail: `${c.model.mode}, loading its bundle` }
+          : { ok: true, detail: `${c.model.mode}, breaker ${breaker.state}` },
+      )
       .catch(() => ({ ok: false, detail: `${c.model.mode}, breaker ${breaker.state}` }));
     // The app still serves accounts and shelves when the model service is down: degraded, not unready.
+    // Without a catalogue nothing works (book ids cannot be validated), so that is not ready.
     const status =
-      !checks.mongo.ok || checks.redis?.ok === false ? 'not_ready' : checks.model.ok ? 'ready' : 'degraded';
+      !checks.mongo.ok || checks.redis?.ok === false || !checks.catalog.ok
+        ? 'not_ready'
+        : checks.model.ok
+          ? 'ready'
+          : 'degraded';
     res.status(status === 'not_ready' ? 503 : 200).json({ status, checks } satisfies ReadinessResponse);
   });
 

@@ -121,12 +121,16 @@ links to `/admin` (service health, breaker state, evaluation metrics, catalogue 
 
 ### Using the real model service
 
-1. Start the model service (branch `serve-api` of zee10524/LightGcn, see its `service/README.md`). It
-   needs `SERVICE_API_KEY` and a bundle (`BUNDLE_URL`). To run it from this compose file, put those in
-   `.env.model`, point `MODEL_SERVICE_CONTEXT` at its checkout and use
-   `docker compose --profile model up --build`.
+1. Start the model service (`main` of zee10524/LightGcn, see its `service/README.md`). It needs
+   `SERVICE_API_KEY` and a bundle. To run it from this compose file, put `SERVICE_API_KEY` and
+   `BUNDLE_URL` (and optionally `GEMINI_API_KEY`) in `.env.model`, point `MODEL_SERVICE_CONTEXT` at its
+   checkout (default `../LitSense-service`) and use `docker compose --profile model up --build`. The
+   bundle is downloaded once into the `model-bundle` volume; to use a bundle you already extracted, set
+   `MODEL_BUNDLE_DIR` to that folder instead.
 2. In `.env`: `MODEL_SERVICE_MODE=http`, `MODEL_SERVICE_URL=http://model:8000` (or its host),
-   `MODEL_SERVICE_KEY=<the same value as the service's SERVICE_API_KEY>`.
+   `MODEL_SERVICE_KEY=<the same value as the service's SERVICE_API_KEY>`. The API may start first: its
+   boot seed retries (2 s doubling to 30 s) until the service has loaded its bundle, and `/readyz` is
+   503 `not_ready` until the catalogue exists (`degraded` while the service is down or still loading).
 3. Book ids are the core's `book_id`s, so switching catalogues needs a reseed. The seed refuses to
    silently remap ids; with `--reset` it clears reader data (ratings, shelves, reviews, chats):
 
@@ -150,7 +154,8 @@ related books, search) include the catalogue's bundle version, so they roll over
 API warns when the service's `bundle_version` differs from the one the catalogue was seeded from.
 
 To run the end-to-end smoke test against a running model service instead of the mock (it uses its own
-database, `litsense_e2e_live`, seeded from the service on first start):
+database, `litsense_e2e_live`, seeded from the service on first start; drop it when the service's
+bundle changes):
 
 ```bash
 E2E_MODEL_SERVICE_MODE=http E2E_MODEL_SERVICE_URL=http://localhost:8000 E2E_MODEL_SERVICE_KEY=<SERVICE_API_KEY> npm run test:e2e
@@ -229,7 +234,7 @@ router uses (`/openapi.json`, browsable at `/docs`, committed as `apps/api/opena
 | Books           | `GET /books`, `/books/genres`, `/books/:id`, `/books/:id/insights`, `/similar`, `/more-by-author`, `GET /search`                                    |
 | Chat            | `GET/POST /chat/sessions`, `GET/DELETE /chat/sessions/:id`, `POST .../messages`, `DELETE .../chips/:key`                                            |
 | Admin           | `GET /admin/overview`, `GET /admin/metrics`, `POST /admin/catalog/reseed`                                                                           |
-| Health          | `GET /healthz` (liveness), `GET /readyz` (Mongo, Redis, model service)                                                                              |
+| Health          | `GET /healthz` (liveness), `GET /readyz` (Mongo, Redis, catalogue, model service)                                                                   |
 
 Errors always look like `{ "error": { "code", "message", "details"?, "requestId" } }`. Lists are
 cursor paginated (`?cursor=&limit=`, response `{ items, nextCursor }`). `PUT /me/ratings/:id` and
@@ -269,7 +274,7 @@ and re-runs the turn with an empty message.
 | Shared contract (chip keys, schema rules)                                               | Vitest                                     | 7     |
 | API unit (breaker, retry, HTTP client, mock contract behaviour)                         | Vitest                                     | 33    |
 | API drift check (requests and mock responses against the model service's OpenAPI)       | Vitest + Ajv                               | 4     |
-| API integration (auth, library, onboarding, chat, reviews, jobs, resilience, seeding)   | Vitest + supertest + mongodb-memory-server | 43    |
+| API integration (auth, library, onboarding, chat, reviews, jobs, resilience, seeding)   | Vitest + supertest + mongodb-memory-server | 46    |
 | Web unit (HTTP client, evidence parsing, components)                                    | Vitest + Testing Library                   | 13    |
 | End to end (sign up, onboarding, recommendations, explain, dismiss, chat, chip removal) | Playwright                                 | 1     |
 

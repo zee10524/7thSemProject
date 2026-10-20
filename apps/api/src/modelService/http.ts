@@ -42,7 +42,7 @@ type BodyOf<P extends keyof paths> = paths[P] extends {
   : never;
 
 /**
- * The model service's routes (zee10524/LightGcn, branch serve-api, `service/openapi.json`): one route
+ * The model service's routes (zee10524/LightGcn main, `service/openapi.json`): one route
  * per contract function, request fields exactly as the function's arguments (unknown fields are a 400).
  *
  * `retry: 'safe'` retries network errors, timeouts, 429 and 5xx. `'once'` (LLM-backed calls with long

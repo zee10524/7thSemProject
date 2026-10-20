@@ -40,9 +40,9 @@ export default defineConfig({
     {
       command: 'npm run start:dev -w @litsense/api',
       cwd: '../..',
-      url: 'http://localhost:4000/healthz',
+      // /readyz is 503 until the catalogue is seeded (a live run waits for the service to load first).
+      url: 'http://localhost:4000/readyz',
       reuseExistingServer: !CI,
-      // A first live run seeds the whole catalogue from the service before the API listens.
       timeout: LIVE ? 600_000 : 120_000,
       env: {
         NODE_ENV: 'development',

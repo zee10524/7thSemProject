@@ -1,6 +1,6 @@
 /**
  * Drift test: every call the HTTP client makes must exist in the model service's published OpenAPI
- * (zee10524/LightGcn, branch serve-api, service/openapi.json, vendored in test/fixtures) and send only
+ * (zee10524/LightGcn main, service/openapi.json, unchanged since 79278ca, vendored in test/fixtures) and send only
  * the fields its request schema allows, because the service rejects unknown fields with a 400. Every
  * MockModelService answer must also validate against the published response schema, so switching
  * from the mock to the real service is config only. Refresh the fixture when the service changes.

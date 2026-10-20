@@ -314,6 +314,8 @@ export type CatalogPage = z.infer<typeof CatalogPage>;
 
 export const ModelHealth = z.looseObject({
   status: z.string().optional(),
+  /** The service answers /health while it loads its bundle; `ready: false` means calls would get 503. */
+  ready: z.boolean().optional(),
   mock: z.boolean().optional(),
   api_version: z.string().optional(),
   bundle_version: z.string().nullable().optional(),

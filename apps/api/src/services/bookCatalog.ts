@@ -69,7 +69,13 @@ export class BookCatalog {
   }
 
   knownIds(): Promise<Set<number>> {
-    this.ids ??= bookRepository.allIds().then((ids) => new Set(ids));
+    this.ids ??= bookRepository
+      .allIds()
+      .then((ids) => new Set(ids))
+      .catch((err: unknown) => {
+        this.ids = null; // a failed read must not stick: the next call retries
+        throw err;
+      });
     return this.ids;
   }
 
