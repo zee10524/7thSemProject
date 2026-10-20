@@ -11,7 +11,7 @@ interface ModelRow {
   metrics: Record<string, number | null>;
 }
 
-const fmt = (v: unknown) => (typeof v === 'number' ? v.toFixed(4) : '—');
+const fmt = (v: unknown) => (typeof v === 'number' ? v.toFixed(4) : 'n/a');
 
 export default function AdminPage() {
   const qc = useQueryClient();
@@ -34,7 +34,7 @@ export default function AdminPage() {
       <PageHead
         eyebrow="Admin"
         title="Behind the page"
-        sub="Service health and the offline evaluation report. Null metrics show as a dash, never as zero."
+        sub="Service health and the offline evaluation report. Null metrics show as n/a, never as zero."
       />
       <Section cls="admin" id="sec-overview">
         <SectionHead no="01" title="Overview" />

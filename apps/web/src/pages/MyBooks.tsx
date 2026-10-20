@@ -360,7 +360,7 @@ export default function MyBooksPage() {
             ['Reading', stats.data?.reading],
             ['Want to read', stats.data?.want],
             ['Pages read', stats.data?.pagesRead.toLocaleString('en-US')],
-            ['Average rating', stats.data?.avgStars?.toFixed(1) ?? '—'],
+            ['Average rating', stats.data?.avgStars?.toFixed(1) ?? 'n/a'],
           ].map(([label, value]) => (
             <div key={label} className="stat">
               <dt className="stat__label">{label}</dt>

@@ -381,11 +381,11 @@ export default function BookPage() {
                 </div>
                 <div>
                   <dt>Pages</dt>
-                  <dd>{b.pages ?? '—'}</dd>
+                  <dd>{b.pages ?? 'n/a'}</dd>
                 </div>
                 <div>
                   <dt>Published</dt>
-                  <dd>{b.year ?? '—'}</dd>
+                  <dd>{b.year ?? 'n/a'}</dd>
                 </div>
                 <div>
                   <dt>{b.series ? 'Series' : 'Rating'}</dt>
@@ -394,7 +394,7 @@ export default function BookPage() {
                       ? `${b.series.name ?? 'Series'}${b.series.pos ? `, #${b.series.pos}` : ''}`
                       : b.avgRating
                         ? `${b.avgRating.toFixed(1)} / 5`
-                        : '—'}
+                        : 'n/a'}
                   </dd>
                 </div>
               </dl>

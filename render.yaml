@@ -1,0 +1,35 @@
+# Render Blueprint for the API (and an optional separate worker). Values marked sync: false are set in
+# the Render dashboard; nothing secret lives in this file. See README "Deploy".
+services:
+  - type: web
+    name: litsense-api
+    runtime: docker
+    dockerfilePath: ./apps/api/Dockerfile
+    dockerContext: .
+    healthCheckPath: /healthz
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      # Vercel rewrite -> Render load balancer -> API: two proxies in front.
+      - key: TRUST_PROXY
+        value: '2'
+      - key: JWT_ACCESS_SECRET
+        generateValue: true
+      - key: MONGODB_URI
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
+      - key: ADMIN_EMAILS
+        sync: false
+      - key: MODEL_SERVICE_MODE
+        value: http
+      - key: MODEL_SERVICE_URL
+        sync: false
+      - key: MODEL_SERVICE_KEY
+        sync: false
+      # Single instance on the free plan: run the BullMQ consumer inside the API process.
+      - key: WORKER_IN_PROCESS
+        value: 'true'
